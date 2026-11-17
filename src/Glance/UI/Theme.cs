@@ -240,10 +240,15 @@ internal static class Animator
         Active.Add(a);
         if (_timer is null)
         {
-            _timer = new System.Windows.Forms.Timer { Interval = 15 };
+            _timer = new System.Windows.Forms.Timer { Interval = 16 };
             _timer.Tick += (_, _) => Tick();
         }
-        _timer.Start();
+        if (!_timer.Enabled)
+        {
+            // 1 ms system timer resolution only while something animates: even ~60 fps frames instead of 15.6/31 ms jitter.
+            try { timeBeginPeriod(1); _hiRes = true; } catch { }
+            _timer.Start();
+        }
         step(0);
         return a;
     }
@@ -262,8 +267,16 @@ internal static class Animator
                 try { a.Done?.Invoke(); } catch (Exception e) { Log.Error("Anim done", e); }
             }
         }
-        if (Active.Count == 0) _timer?.Stop();
+        if (Active.Count == 0)
+        {
+            _timer?.Stop();
+            if (_hiRes) { try { timeEndPeriod(1); } catch { } _hiRes = false; }
+        }
     }
+
+    static bool _hiRes;
+    [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
+    [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeEndPeriod(uint ms);
 
     public static float EaseOut(float t) => 1 - MathF.Pow(1 - t, 3);
 }

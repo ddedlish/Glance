@@ -287,42 +287,29 @@ internal sealed class GlassScroller : GlassPanel
     int _target;
     Animator.Anim? _anim;
 
-    const uint SW_SCROLLCHILDREN = 0x1;
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int ScrollWindowEx(IntPtr h, int dx, int dy, ref Native.RECT scroll, ref Native.RECT clip, IntPtr rgn, IntPtr update, uint flags);
+    const int WM_SETREDRAW = 0x000B;
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr SendMessageW(IntPtr h, int msg, IntPtr w, IntPtr l);
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr h, ref Native.RECT rect, IntPtr rgn, uint flags);
 
     /// <summary>
-    /// Hardware-style scrolling: the already drawn pixels (with their alpha) are shifted by the window manager and
-    /// only the strip that comes into view is painted, synchronously, in the same frame. Smooth at 60 fps and
-    /// cheap, instead of repainting every row on every step.
+    /// Moves the content with redraw frozen, then repaints the viewport (all rows) synchronously in one go:
+    /// every row appears at its new place in the same frame. Each row repaints only its visible part.
     /// </summary>
     void Apply(int v)
     {
         v = Math.Clamp(v, 0, Max);
-        int old = _offset;
         _offset = v;
-        if (Content.Top != -v || old != v)
+        if (Content.Top != -v)
         {
-            if (IsHandleCreated && Content.IsHandleCreated && Math.Abs(v - old) < ClientSize.Height)
+            if (IsHandleCreated)
             {
-                int barW = _bar?.Width ?? 0;
-                var rc = new Native.RECT { Left = 0, Top = 0, Right = ClientSize.Width - barW, Bottom = ClientSize.Height };
-                var clip = rc;
-                int d = v - old; // > 0: content moves up, a strip appears at the bottom
-                ScrollWindowEx(Handle, 0, -d, ref rc, ref clip, IntPtr.Zero, IntPtr.Zero, SW_SCROLLCHILDREN);
-                if (Content.Top != -v) Content.Top = -v; // keep WinForms' idea of the position in sync (no visual move)
-                // The uncovered strip belongs to the content and its rows (child windows): invalidate it in all of
-                // them explicitly and paint it now, in the same frame.
-                var strip = d > 0
-                    ? new Native.RECT { Left = 0, Top = ClientSize.Height - d, Right = rc.Right, Bottom = ClientSize.Height }
-                    : new Native.RECT { Left = 0, Top = 0, Right = rc.Right, Bottom = -d };
-                RedrawWindow(Handle, ref strip, IntPtr.Zero, 0x1 /*RDW_INVALIDATE*/ | 0x80 /*RDW_ALLCHILDREN*/ | 0x100 /*RDW_UPDATENOW*/);
-            }
-            else
-            {
+                SendMessageW(Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
                 Content.Top = -v;
-                Invalidate(true);
+                SendMessageW(Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                var all = new Native.RECT { Left = 0, Top = 0, Right = ClientSize.Width, Bottom = ClientSize.Height };
+                RedrawWindow(Handle, ref all, IntPtr.Zero, 0x1 /*INVALIDATE*/ | 0x80 /*ALLCHILDREN*/ | 0x100 /*UPDATENOW*/);
             }
+            else Content.Top = -v;
         }
         if (_bar is null) return;
         _bar.Visible = Max > 0;
