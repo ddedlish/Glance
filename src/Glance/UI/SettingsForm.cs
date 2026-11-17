@@ -335,7 +335,7 @@ internal sealed class InputForm : Form
 {
     readonly TextBox _box;
 
-    InputForm(string title, string label, string value)
+    InputForm(string title, string label, string value, int maxLength)
     {
         var t = Theme.Current;
         float sc = Native.DpiAt(Cursor.Position) / 96f;
@@ -360,7 +360,7 @@ internal sealed class InputForm : Form
             BorderStyle = BorderStyle.FixedSingle,
             Location = new Point(Px(20), Px(42)),
             Width = Px(340),
-            MaxLength = 60,
+            MaxLength = maxLength,
         };
         Controls.Add(_box);
 
@@ -391,9 +391,9 @@ internal sealed class InputForm : Form
         Shown += (_, _) => { Activate(); Native.SetForegroundWindow(Handle); _box.Focus(); _box.SelectAll(); };
     }
 
-    public static string? Ask(string title, string label, string value)
+    public static string? Ask(string title, string label, string value, int maxLength = 60)
     {
-        using var f = new InputForm(title, label, value);
+        using var f = new InputForm(title, label, value, maxLength);
         // No owner: ShowDialog() would otherwise attach the dialog to the active window — the tray panel,
         // which closes a moment later and takes the dialog down with it.
         return f.ShowDialog(NoOwner.Instance) == DialogResult.OK ? f._box.Text.Trim() : null;

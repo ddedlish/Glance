@@ -25,7 +25,7 @@ internal static class ProUi
     /// <summary>Asks for a key; returns true when Pro got activated.</summary>
     public static bool Activate(AppSettings s)
     {
-        var key = InputForm.Ask("Glance Pro", "Вставьте ключ Glance Pro (GLANCE-…)", "");
+        var key = InputForm.Ask("Glance Pro", "Вставьте ключ Glance Pro (GLANCE-…)", "", maxLength: 1000); // keys are ~130 chars
         if (key is null) return false;
         if (!Pro.Apply(key))
         {
