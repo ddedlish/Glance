@@ -353,6 +353,7 @@ internal sealed class AppHost : ApplicationContext
                 _icons[key] = icon;
             }
             string tip = key == SummaryKey ? string.Join("\n", visible.Take(4).Select(Svc.Tooltip)) : Svc.Tooltip(a);
+            if (_pending is not null) tip = UpdateTip + "\n" + tip; // first line: survives the 128-char tooltip limit
             string sig = $"{a.WeakestLevel}|{a.Charging}|{tip}|{_s.IconStyle}|{_s.RichHover}|{_s.LowBatteryThreshold}|{dark}|{size}";
             if (_iconSig.TryGetValue(key, out var old) && old == sig) continue;
             icon.Set(IconRenderer.Device(a.WeakestLevel, a.Charging, _s.IconStyle, _s.LowBatteryThreshold), tip, _s.RichHover);
@@ -494,8 +495,9 @@ internal sealed class AppHost : ApplicationContext
     void OpenSettings()
     {
         if (_settingsForm is { IsDisposed: false }) { _settingsForm.Activate(); return; }
-        var f = new SettingsForm(_s);
+        var f = new SettingsForm(_s) { PendingUpdate = () => _pending?.VersionText };
         f.CheckUpdatesRequested += () => CheckUpdatesAsync(manual: true);
+        f.InstallUpdateRequested += () => { if (_pending is not null) _ = InstallUpdateAsync(_pending); };
         f.FormClosed += (_, _) => { _settingsForm = null; Ui.Delay(10_000, TrimMemory); };
         _settingsForm = f;
         f.Show();
@@ -520,10 +522,8 @@ internal sealed class AppHost : ApplicationContext
         _updateTimer?.Dispose();
         _updateTimer = null;
         if (!_s.CheckUpdates || !AppInfo.UpdatesConfigured) return;
-        var since = DateTime.UtcNow - _s.LastUpdateCheck;
-        var due = since >= TimeSpan.FromHours(24) ? TimeSpan.FromMinutes(3) : TimeSpan.FromHours(24) - since;
-        if (due < TimeSpan.FromMinutes(3)) due = TimeSpan.FromMinutes(3);
-        _updateTimer = new System.Threading.Timer(_ => Ui.Post(() => _ = CheckUpdatesAsync(false)), null, due, TimeSpan.FromHours(24));
+        // Shortly after every start, then every 6 hours: a new version is noticed the same day.
+        _updateTimer = new System.Threading.Timer(_ => Ui.Post(() => _ = CheckUpdatesAsync(false)), null, TimeSpan.FromSeconds(25), TimeSpan.FromHours(6));
     }
 
     async Task<string> CheckUpdatesAsync(bool manual)
@@ -534,16 +534,21 @@ internal sealed class AppHost : ApplicationContext
             _s.LastUpdateCheck = DateTime.UtcNow;
             _s.Save();
             if (r is null) return $"Установлена последняя версия ({AppInfo.VersionText})";
+            bool isNew = _pending?.Tag != r.Tag;
             _pending = r;
             if (_flyout is not null) { _flyout.PendingUpdate = r.VersionText; _flyout.Rebuild(); }
+            if (isNew) { _iconSig.Clear(); SyncTray(); } // tooltip line «Доступно обновление»
             if (!manual && _s.AutoInstallUpdates)
             {
                 await InstallUpdateAsync(r, silent: true);
                 return "";
             }
-            if (manual || _s.SkippedVersion != r.Tag)
+            // Remind: at once for a new version, then at most once a day until it is installed.
+            if (manual || _s.SkippedVersion != r.Tag || DateTime.UtcNow - _s.UpdateRemindedAt > TimeSpan.FromHours(20))
             {
-                _s.SkippedVersion = r.Tag; // notify once per version
+                _s.SkippedVersion = r.Tag;
+                _s.UpdateRemindedAt = DateTime.UtcNow;
+                _s.Save();
                 _toasts.ShowMessage($"Доступна версия {r.VersionText}", "Нажмите, чтобы обновить. Настройки и история сохранятся.", Glyphs.Download,
                     () => _ = InstallUpdateAsync(r));
             }
@@ -555,6 +560,8 @@ internal sealed class AppHost : ApplicationContext
             return "Не удалось проверить: " + e.Message;
         }
     }
+
+    string UpdateTip => $"⬆ Доступно обновление {_pending?.VersionText}";
 
     async Task InstallUpdateAsync(UpdateService.Release r, bool silent = false)
     {

@@ -135,10 +135,14 @@ internal sealed class FlyoutForm : CardForm
         if (PendingUpdate is not null)
         {
             _bannerRect = new RectangleF(Side * s, y + 4 * s, (W - 2 * Side) * s, (Banner - 8) * s);
-            Painter.FillRound(g, _bannerRect, 6 * s, Theme.Alpha(t.Accent, _hotBtn == "banner" ? 70 : 45));
-            Painter.Glyph(g, Glyphs.Download, 13 * s, t.AccentText, new RectangleF(_bannerRect.X + 6 * s, _bannerRect.Y, 24 * s, _bannerRect.Height));
-            Painter.Text(g, $"Доступна версия {PendingUpdate} — установить", Fonts.Regular(12.5f * s), t.Text,
-                new RectangleF(_bannerRect.X + 32 * s, _bannerRect.Y, _bannerRect.Width - 40 * s, _bannerRect.Height));
+            var fill = _hotBtn == "banner" ? Theme.Mix(t.AccentFill, Color.White, 0.12f) : t.AccentFill;
+            Painter.FillRound(g, _bannerRect, 10 * s, fill);
+            Painter.GlassSheen(g, _bannerRect, 10 * s, t.Dark);
+            Painter.Glyph(g, Glyphs.Download, 14 * s, t.OnAccent, new RectangleF(_bannerRect.X + 8 * s, _bannerRect.Y, 24 * s, _bannerRect.Height));
+            Painter.Text(g, $"Доступна версия {PendingUpdate}", Fonts.Strong(13 * s), t.OnAccent,
+                new RectangleF(_bannerRect.X + 38 * s, _bannerRect.Y, _bannerRect.Width - 140 * s, _bannerRect.Height));
+            Painter.Text(g, "Обновить ›", Fonts.Strong(13 * s), t.OnAccent,
+                new RectangleF(_bannerRect.Right - 104 * s, _bannerRect.Y, 94 * s, _bannerRect.Height), StringAlignment.Far);
             y += Banner * s;
         }
         else _bannerRect = RectangleF.Empty;

@@ -21,10 +21,10 @@ internal sealed class Theme
         ? (Dark ? Color.FromArgb(18, 20, 28) : Color.FromArgb(236, 240, 248))
         : (Dark ? Color.FromArgb(32, 32, 32) : Color.FromArgb(243, 243, 243));
     public Color Surface => Glass
-        ? (Dark ? Color.FromArgb(30, 255, 255, 255) : Color.FromArgb(165, 255, 255, 255))
+        ? (Dark ? Color.FromArgb(26, 255, 255, 255) : Color.FromArgb(120, 255, 255, 255))
         : (Dark ? Color.FromArgb(43, 43, 43) : Color.FromArgb(251, 251, 251));
     public Color SurfaceHover => Glass
-        ? (Dark ? Color.FromArgb(48, 255, 255, 255) : Color.FromArgb(215, 255, 255, 255))
+        ? (Dark ? Color.FromArgb(46, 255, 255, 255) : Color.FromArgb(180, 255, 255, 255))
         : (Dark ? Color.FromArgb(52, 52, 52) : Color.FromArgb(245, 245, 245));
     public Color Border => Glass
         ? (Dark ? Color.FromArgb(52, 255, 255, 255) : Color.FromArgb(46, 0, 0, 0))
@@ -117,30 +117,30 @@ internal sealed class Theme
         return AccentFill;
     }
 
-    /// <summary>Paints the window backdrop: vivid blurred colour blobs under a frosted veil (glass) or flat (classic).</summary>
-    public void PaintBackdrop(Graphics g, Rectangle r)
+    /// <summary>
+    /// Paints the window backdrop. Glass: a light translucent tint over the live DWM blur of what is behind the
+    /// window (wallpaper, apps) — truly see-through. Classic: flat opaque background.
+    /// <paramref name="sheen"/> adds a soft specular gradient at the top (fixed-size popups only: it depends on position).
+    /// </summary>
+    public void PaintBackdrop(Graphics g, Rectangle r, bool sheen = false)
     {
-        g.Clear(Bg);
-        if (!Glass || r.Width <= 0 || r.Height <= 0) return;
-        var state = g.Save();
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        void Blob(float cx, float cy, float rad, Color c, int alpha)
+        if (r.Width <= 0 || r.Height <= 0) return;
+        if (!Glass)
         {
-            var rect = new RectangleF(r.X + cx * r.Width - rad, r.Y + cy * r.Height - rad, rad * 2, rad * 2);
-            using var path = new GraphicsPath();
-            path.AddEllipse(rect);
-            using var br = new PathGradientBrush(path) { CenterColor = Alpha(c, alpha), SurroundColors = new[] { Alpha(c, 0) } };
-            g.FillEllipse(br, rect);
+            using var solid = new SolidBrush(Bg);
+            g.FillRectangle(solid, r);
+            return;
         }
-        float big = Math.Max(r.Width, r.Height);
-        Blob(0.05f, 0.0f, big * 0.75f, Accent, Dark ? 120 : 90);
-        Blob(1.0f, 0.15f, big * 0.6f, Color.FromArgb(175, 82, 222), Dark ? 100 : 70);
-        Blob(0.7f, 1.05f, big * 0.7f, Color.FromArgb(48, 176, 199), Dark ? 90 : 70);
-        // frosted veil
-        using (var veil = new SolidBrush(Dark ? Color.FromArgb(70, 12, 14, 20) : Color.FromArgb(90, 255, 255, 255)))
-            g.FillRectangle(veil, r);
-        g.Restore(state);
+        using (var tint = new SolidBrush(GlassTint)) g.FillRectangle(tint, r);
+        if (!sheen) return;
+        var top = new RectangleF(r.X, r.Y, r.Width, Math.Max(2, r.Height * 0.45f));
+        using var br = new LinearGradientBrush(new RectangleF(top.X, top.Y - 1, top.Width, top.Height + 2),
+            Color.FromArgb(Dark ? 20 : 70, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Vertical);
+        g.FillRectangle(br, top);
     }
+
+    /// <summary>Tint laid over the blurred background: enough for legible text, still clearly transparent.</summary>
+    public Color GlassTint => Dark ? Color.FromArgb(118, 14, 16, 24) : Color.FromArgb(128, 248, 249, 252);
 
     public static Color Mix(Color a, Color b, float t) => Color.FromArgb(
         (int)(a.A + (b.A - a.A) * t), (int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
@@ -272,7 +272,7 @@ internal static class Painter
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+        g.TextRenderingHint = SoftText ? TextRenderingHint.AntiAliasGridFit : TextRenderingHint.ClearTypeGridFit;
         g.CompositingQuality = CompositingQuality.HighQuality;
     }
 

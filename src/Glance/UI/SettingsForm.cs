@@ -2,14 +2,19 @@ using System.Diagnostics;
 
 namespace Glance;
 
-internal sealed class SettingsForm : Form
+internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
 {
     readonly AppSettings _s;
-    readonly Panel _panel;
+    readonly GlassScroller _scroll;
+    readonly AlphaBuffer _buf = new();
+    GlassPanel _panel => _scroll.Content;
     float _sc;
     SettingRow? _updateRow;
 
     public event Func<Task<string>>? CheckUpdatesRequested;
+    public event Action? InstallUpdateRequested;
+    /// <summary>Version text of an update that is ready to install, if any.</summary>
+    public Func<string?> PendingUpdate { get; set; } = () => null;
 
     public SettingsForm(AppSettings settings)
     {
@@ -23,11 +28,31 @@ internal sealed class SettingsForm : Form
         ShowIcon = true;
         try { Icon = Icon.ExtractAssociatedIcon(AppInfo.ExePath); } catch { }
         _sc = Native.DpiAt(Cursor.Position) / 96f;
-        _panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
-        Controls.Add(_panel);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
+        _scroll = new GlassScroller { Dock = DockStyle.Fill };
+        Controls.Add(_scroll);
         ClientSize = new Size(Px(580), Px(720));
         Build();
         Theme.Changed += OnTheme;
+        Application.AddMessageFilter(this);
+    }
+
+    public void PaintLayer(Graphics g, Size size) => Theme.Current.PaintBackdrop(g, new Rectangle(Point.Empty, size));
+
+    protected override void WndProc(ref Message m)
+    {
+        if (GlassHost.Handle(this, ref m, _buf, null)) return;
+        base.WndProc(ref m);
+    }
+
+    /// <summary>Mouse wheel anywhere over the window scrolls the settings (child controls do not eat it).</summary>
+    public bool PreFilterMessage(ref Message m)
+    {
+        if (m.Msg != 0x020A || IsDisposed || !Visible) return false;
+        if (!Bounds.Contains(Cursor.Position)) return false;
+        int delta = (short)((long)m.WParam >> 16);
+        _scroll.ScrollBy(-delta * Px(56) / 120);
+        return true;
     }
 
     int Px(float dp) => (int)MathF.Round(dp * _sc);
@@ -53,9 +78,10 @@ internal sealed class SettingsForm : Form
     {
         var t = Theme.Current;
         BackColor = t.Bg;
-        _panel.BackColor = t.Bg;
-        if (IsHandleCreated) Native.DarkTitleBar(Handle, t.Dark);
-        if (_panel.IsHandleCreated) Native.SetWindowTheme(_panel.Handle, t.Dark ? "DarkMode_Explorer" : "Explorer", null);
+        if (!IsHandleCreated) return;
+        Native.DarkTitleBar(Handle, t.Dark);
+        GlassHost.SetBlur(Handle, t.Glass);
+        Invalidate(true);
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs e)
@@ -77,21 +103,15 @@ internal sealed class SettingsForm : Form
         foreach (Control c in _panel.Controls.Cast<Control>().ToList()) { _panel.Controls.Remove(c); c.Dispose(); }
         var t = Theme.Current;
         BackColor = t.Bg;
-        _panel.BackColor = t.Bg;
         float sc = _sc;
         int y = Px(20), x = Px(20);
-        int w = ClientSize.Width - Px(40) - SystemInformation.VerticalScrollBarWidth;
+        int w = ClientSize.Width - Px(44);
 
         void Section(string title)
         {
-            var l = new Label
+            var l = new GlassLabel(title, Fonts.Strong(14 * sc), t.Text)
             {
-                Text = title,
-                Font = Fonts.Strong(14 * sc),
-                ForeColor = t.Text,
-                BackColor = t.Bg,
-                AutoSize = false,
-                Location = new Point(x, y + Px(8)),
+                Location = new Point(x + Px(4), y + Px(8)),
                 Size = new Size(w, Px(26)),
             };
             _panel.Controls.Add(l);
@@ -102,7 +122,8 @@ internal sealed class SettingsForm : Form
         {
             var row = new SettingRow(sc, title, desc, right) { Location = new Point(x, y), Width = w };
             _panel.Controls.Add(row);
-            y += row.Height + Px(4);
+            if (right is not null) right.GotFocus += (_, _) => _scroll.EnsureVisible(row);
+            y += row.Height + Px(6);
             return row;
         }
 
@@ -180,14 +201,20 @@ internal sealed class SettingsForm : Form
         {
             Row("Проверять обновления", "Раз в сутки, только GitHub Releases этого проекта", Toggle(_s.CheckUpdates, v => _s.CheckUpdates = v));
             Row("Устанавливать автоматически", "Файл проверяется по SHA-256 перед заменой", Toggle(_s.AutoInstallUpdates, v => _s.AutoInstallUpdates = v));
-            var btn = new FlatButton(sc, "Проверить сейчас", primary: true);
-            _updateRow = Row($"Версия {AppInfo.VersionText}", "Нажмите, чтобы проверить", btn);
+            string? pending = PendingUpdate();
+            var btn = new FlatButton(sc, pending is null ? "Проверить сейчас" : $"Обновить до {pending}", primary: true);
+            _updateRow = Row($"Версия {AppInfo.VersionText}", pending is null ? "Нажмите, чтобы проверить" : $"Доступна версия {pending}. Настройки и история сохранятся", btn);
             btn.Click += async (_, _) =>
             {
+                if (PendingUpdate() is not null) { InstallUpdateRequested?.Invoke(); return; }
                 if (CheckUpdatesRequested is null || _updateRow is null) return;
                 btn.Enabled = false;
                 _updateRow.Description = "Проверяем…";
-                try { _updateRow.Description = await CheckUpdatesRequested(); }
+                try
+                {
+                    _updateRow.Description = await CheckUpdatesRequested();
+                    if (PendingUpdate() is not null && !IsDisposed) { Build(); return; } // button becomes «Обновить до …»
+                }
                 catch (Exception ex) { _updateRow.Description = "Ошибка: " + ex.Message; }
                 finally { if (!btn.IsDisposed) btn.Enabled = true; }
             };
@@ -199,43 +226,36 @@ internal sealed class SettingsForm : Form
 
         // ── Footer ──
         y += Px(10);
-        var folder = new LinkLabel
+        var folder = new GlassLabel("Открыть папку с данными и журналом", Fonts.Regular(12.5f * sc), t.AccentText, link: true)
         {
-            Text = "Открыть папку с данными и журналом",
-            Font = Fonts.Regular(12.5f * sc),
-            LinkColor = t.AccentText,
-            ActiveLinkColor = t.AccentText,
-            BackColor = t.Bg,
-            AutoSize = true,
-            Location = new Point(x, y),
+            Location = new Point(x + Px(4), y),
+            Size = new Size(w, Px(22)),
         };
-        folder.LinkClicked += (_, _) =>
+        folder.Click += (_, _) =>
         {
             try { Process.Start(new ProcessStartInfo(AppInfo.DataDir) { UseShellExecute = true }); } catch { }
         };
         _panel.Controls.Add(folder);
         y += Px(28);
-        var privacy = new Label
+        var privacy = new GlassLabel("Glance не собирает данные. Всё хранится только на этом компьютере.", Fonts.Regular(12 * sc), t.SubText)
         {
-            Text = "Glance не собирает данные. Всё хранится только на этом компьютере.",
-            Font = Fonts.Regular(12 * sc),
-            ForeColor = t.SubText,
-            BackColor = t.Bg,
-            AutoSize = false,
-            Location = new Point(x, y),
+            Location = new Point(x + Px(4), y),
             Size = new Size(w, Px(20)),
         };
         _panel.Controls.Add(privacy);
         y += Px(40);
-        // spacer so the last row is not glued to the bottom edge when scrolling
-        _panel.Controls.Add(new Label { Location = new Point(x, y), Size = new Size(1, 1), BackColor = t.Bg });
-
         _panel.ResumeLayout();
+        _scroll.SetContentHeight(y);
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) Theme.Changed -= OnTheme;
+        if (disposing)
+        {
+            Theme.Changed -= OnTheme;
+            Application.RemoveMessageFilter(this);
+            _buf.Dispose();
+        }
         base.Dispose(disposing);
     }
 }

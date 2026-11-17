@@ -5,11 +5,12 @@ internal abstract class ThemedControl : Control
 {
     protected float Sc;
     protected bool Hot, Pressed;
+    readonly AlphaBuffer _buf = new();
 
     protected ThemedControl(float scale)
     {
         Sc = scale;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint |
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
         Cursor = Cursors.Hand;
         TabStop = true;
@@ -25,7 +26,18 @@ internal abstract class ThemedControl : Control
     protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
     protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
 
-    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(T.Opaque(Parent?.BackColor ?? T.Bg));
+    // Background = the layers of the parents (window tint, settings card) at this position: corners blend, no seams.
+    protected override void WndProc(ref Message m)
+    {
+        if (GlassHost.Handle(this, ref m, _buf, g => OnPaint(new PaintEventArgs(g, ClientRectangle)))) return;
+        base.WndProc(ref m);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _buf.Dispose();
+        base.Dispose(disposing);
+    }
 
     protected void FocusRing(Graphics g)
     {
@@ -34,6 +46,7 @@ internal abstract class ThemedControl : Control
     }
 }
 
+/// <summary>iOS-style switch: green capsule, white knob with a soft shadow that stretches while pressed.</summary>
 internal sealed class ToggleSwitch : ThemedControl
 {
     bool _on;
@@ -44,7 +57,7 @@ internal sealed class ToggleSwitch : ThemedControl
     {
         _on = on;
         _knob = on ? 1 : 0;
-        Size = new Size(Px(40), Px(20));
+        Size = new Size(Px(46), Px(28));
     }
 
     public bool Checked
@@ -55,7 +68,7 @@ internal sealed class ToggleSwitch : ThemedControl
             if (_on == value) return;
             _on = value;
             float from = _knob, to = value ? 1 : 0;
-            Animator.Run(140, p => { _knob = from + (to - from) * p; if (!IsDisposed) Invalidate(); });
+            Animator.Run(180, p => { _knob = from + (to - from) * p; if (!IsDisposed) Invalidate(); });
             CheckedChanged?.Invoke();
         }
     }
@@ -72,22 +85,26 @@ internal sealed class ToggleSwitch : ThemedControl
     {
         var g = e.Graphics;
         Painter.Prepare(g);
-        var r = new RectangleF(1, 1, Width - 2, Height - 2);
+        var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         float rad = r.Height / 2;
-        if (_on)
-        {
-            Painter.FillRound(g, r, rad, Hot ? Theme.Mix(T.AccentFill, T.Text, 0.1f) : T.AccentFill);
-        }
-        else
-        {
-            Painter.FillRound(g, r, rad, Hot ? T.SurfaceHover : Theme.Alpha(T.Surface, 0));
-            Painter.StrokeRound(g, r, rad, T.SubText, Math.Max(1, Sc));
-        }
-        float d = (Pressed ? 14 : Hot ? 13 : 12) * Sc;
-        float travel = r.Width - 2 * rad;
-        float cx = r.X + rad + travel * _knob, cy = r.Y + rad;
-        using var b = new SolidBrush(_on ? T.OnAccent : T.SubText);
-        g.FillEllipse(b, cx - d / 2, cy - d / 2, d, d);
+        var onColor = T.Glass ? Theme.VividGreen : T.AccentFill;
+        var offColor = T.Dark ? Color.FromArgb(T.Glass ? 70 : 255, T.Glass ? Color.White : Color.FromArgb(72, 72, 76))
+                              : Color.FromArgb(T.Glass ? 46 : 255, T.Glass ? Color.Black : Color.FromArgb(225, 225, 230));
+        if (!T.Glass) offColor = Color.FromArgb(255, offColor);
+        // track: cross-fade off → on with the knob
+        Painter.FillRound(g, r, rad, offColor);
+        if (_knob > 0.001f) Painter.FillRound(g, r, rad, Theme.Alpha(onColor, (int)(255 * _knob)));
+        if (Hot) Painter.FillRound(g, r, rad, Color.FromArgb(18, 255, 255, 255));
+
+        float inset = 2f * Sc;
+        float d = r.Height - inset * 2;
+        float w = d * (Pressed ? 1.22f : 1f);
+        float x = r.X + inset + (r.Width - inset * 2 - w) * _knob, y = r.Y + inset;
+        var knob = new RectangleF(x, y, w, d);
+        using (var sh = Painter.Round(new RectangleF(knob.X, knob.Y + 1.2f * Sc, knob.Width, knob.Height), d / 2))
+        using (var sb = new SolidBrush(Color.FromArgb(55, 0, 0, 0)))
+            g.FillPath(sb, sh);
+        Painter.FillRound(g, knob, d / 2, Color.White);
         FocusRing(g);
     }
 }
@@ -147,17 +164,17 @@ internal sealed class Stepper : ThemedControl
         var g = e.Graphics;
         Painter.Prepare(g);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        Painter.FillRound(g, r, 5 * Sc, T.Surface);
-        Painter.StrokeRound(g, r, 5 * Sc, T.Border, Math.Max(1, Sc));
+        Painter.FillRound(g, r, 9 * Sc, T.Surface);
+        Painter.StrokeRound(g, r, 9 * Sc, T.Border, Math.Max(1, Sc));
         var minus = new RectangleF(2 * Sc, 2 * Sc, 30 * Sc, Height - 4 * Sc);
         var plus = new RectangleF(Width - 32 * Sc, 2 * Sc, 30 * Sc, Height - 4 * Sc);
-        if (Hot && _hotSide == -1) Painter.FillRound(g, minus, 4 * Sc, T.SurfaceHover);
-        if (Hot && _hotSide == 1) Painter.FillRound(g, plus, 4 * Sc, T.SurfaceHover);
+        if (Hot && _hotSide == -1) Painter.FillRound(g, minus, 7 * Sc, T.SurfaceHover);
+        if (Hot && _hotSide == 1) Painter.FillRound(g, plus, 7 * Sc, T.SurfaceHover);
         var f = Fonts.Regular(14 * Sc);
         Painter.Text(g, "−", f, _value > _min ? T.Text : T.SubText, minus, StringAlignment.Center);
         Painter.Text(g, "+", f, _value < _max ? T.Text : T.SubText, plus, StringAlignment.Center);
         Painter.Text(g, _format(_value), Fonts.Strong(13 * Sc), T.Text, new RectangleF(minus.Right, 0, plus.Left - minus.Right, Height), StringAlignment.Center);
-        if (Focused && ShowFocusCues) Painter.StrokeRound(g, r, 5 * Sc, T.Text, Math.Max(1, Sc));
+        if (Focused && ShowFocusCues) Painter.StrokeRound(g, r, 9 * Sc, T.Text, Math.Max(1, Sc));
     }
 }
 
@@ -226,19 +243,19 @@ internal sealed class Segmented : ThemedControl
         var g = e.Graphics;
         Painter.Prepare(g);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        Painter.FillRound(g, r, 5 * Sc, T.Surface);
-        Painter.StrokeRound(g, r, 5 * Sc, T.Border, Math.Max(1, Sc));
+        Painter.FillRound(g, r, 9 * Sc, T.Surface);
+        Painter.StrokeRound(g, r, 9 * Sc, T.Border, Math.Max(1, Sc));
         float x = 2 * Sc;
         var f = Fonts.Regular(13 * Sc);
         for (int i = 0; i < _options.Length; i++)
         {
             var seg = new RectangleF(x, 2 * Sc, _widths[i], Height - 4 * Sc);
-            if (i == _selected) Painter.FillRound(g, seg, 4 * Sc, T.AccentFill);
-            else if (Hot && i == _hotIdx) Painter.FillRound(g, seg, 4 * Sc, T.SurfaceHover);
+            if (i == _selected) Painter.FillRound(g, seg, 7 * Sc, T.AccentFill);
+            else if (Hot && i == _hotIdx) Painter.FillRound(g, seg, 7 * Sc, T.SurfaceHover);
             Painter.Text(g, _options[i], i == _selected ? Fonts.Strong(13 * Sc) : f, i == _selected ? T.OnAccent : T.Text, seg, StringAlignment.Center);
             x += _widths[i];
         }
-        if (Focused && ShowFocusCues) Painter.StrokeRound(g, r, 5 * Sc, T.Text, Math.Max(1, Sc));
+        if (Focused && ShowFocusCues) Painter.StrokeRound(g, r, 9 * Sc, T.Text, Math.Max(1, Sc));
     }
 }
 
@@ -266,16 +283,16 @@ internal sealed class FlatButton : ThemedControl
         var g = e.Graphics;
         Painter.Prepare(g);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        Color bg = _primary ? (Hot ? Theme.Mix(T.AccentFill, T.Text, 0.1f) : T.AccentFill) : (Pressed ? T.Bg : Hot ? T.SurfaceHover : T.Surface);
-        Painter.FillRound(g, r, 5 * Sc, Enabled ? bg : T.Surface);
-        if (!_primary) Painter.StrokeRound(g, r, 5 * Sc, T.Border, Math.Max(1, Sc));
+        Color bg = _primary ? (Hot ? Theme.Mix(T.AccentFill, T.Text, 0.1f) : T.AccentFill) : (Pressed ? T.Surface : Hot ? T.SurfaceHover : T.Surface);
+        Painter.FillRound(g, r, 9 * Sc, Enabled ? bg : T.Surface);
+        if (!_primary) Painter.StrokeRound(g, r, 9 * Sc, T.Border, Math.Max(1, Sc));
         Painter.Text(g, Text, Fonts.Regular(13 * Sc), !Enabled ? T.SubText : _primary ? T.OnAccent : T.Text, r, StringAlignment.Center);
-        if (Focused && ShowFocusCues) Painter.StrokeRound(g, r, 5 * Sc, T.Text, Math.Max(1, Sc));
+        if (Focused && ShowFocusCues) Painter.StrokeRound(g, r, 9 * Sc, T.Text, Math.Max(1, Sc));
     }
 }
 
 /// <summary>Settings card row: title + description on the left, a control on the right.</summary>
-internal sealed class SettingRow : Control
+internal sealed class SettingRow : GlassPanel, IGlassLayer
 {
     readonly float _sc;
     readonly string _title;
@@ -285,10 +302,11 @@ internal sealed class SettingRow : Control
     public SettingRow(float scale, string title, string desc, Control? right)
     {
         _sc = scale; _title = title; _desc = desc; _right = right;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-        Height = (int)MathF.Round((desc.Length > 0 ? 76 : 52) * scale);
+        Height = (int)MathF.Round((desc.Length > 0 ? 76 : 56) * scale);
         if (right is not null) Controls.Add(right);
     }
+
+    public Control? RightControl => _right;
 
     public string Description
     {
@@ -303,18 +321,23 @@ internal sealed class SettingRow : Control
             _right.Location = new Point(Width - (int)(16 * _sc) - _right.Width, (Height - _right.Height) / 2);
     }
 
-    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(Parent?.BackColor ?? Theme.Current.Bg);
+    /// <summary>The card itself — also painted under the toggle/stepper so they sit on the same glass.</summary>
+    public void PaintLayer(Graphics g, Size size)
+    {
+        var t = Theme.Current;
+        float s = _sc;
+        var r = new RectangleF(0.5f, 0.5f, size.Width - 1, size.Height - 1);
+        float rad = 12 * s;
+        Painter.FillRound(g, r, rad, t.Surface);
+        Painter.GlassSheen(g, r, rad, t.Dark);
+        Painter.StrokeRound(g, r, rad, t.Border, Math.Max(1, s));
+    }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        Painter.Prepare(g);
         var t = Theme.Current;
         float s = _sc;
-        var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        Painter.FillRound(g, r, 6 * s, t.Surface);
-        Painter.StrokeRound(g, r, 6 * s, t.Border, Math.Max(1, s));
-        // Child control is drawn by WinForms; its background matches the card.
         float textW = Width - 32 * s - (_right?.Width ?? 0) - 12 * s;
         if (_desc.Length > 0)
         {
@@ -322,11 +345,5 @@ internal sealed class SettingRow : Control
             Painter.Text(g, _desc, Fonts.Regular(12 * s), t.SubText, new RectangleF(16 * s, 34 * s, textW, 34 * s), StringAlignment.Near, StringAlignment.Near, wrap: true);
         }
         else Painter.Text(g, _title, Fonts.Regular(14 * s), t.Text, new RectangleF(16 * s, 0, textW, Height));
-    }
-
-    public override Color BackColor
-    {
-        get => Theme.Current.SurfaceSolid;
-        set { }
     }
 }

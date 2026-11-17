@@ -163,8 +163,9 @@ internal static class DeviceCard
 }
 
 /// <summary>Borderless rounded Windows 11 style popup base.</summary>
-internal abstract class CardForm : Form
+internal abstract class CardForm : Form, IGlassLayer
 {
+    readonly AlphaBuffer _buf = new();
     readonly bool _activate;
     protected float Sc { get; private set; } = 1f;
 
@@ -177,7 +178,7 @@ internal abstract class CardForm : Form
         TopMost = true;
         AutoScaleMode = AutoScaleMode.None;
         KeyPreview = true;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         BackColor = Theme.Current.Bg;
     }
 
@@ -203,7 +204,27 @@ internal abstract class CardForm : Form
     {
         base.OnHandleCreated(e);
         Native.RoundCorners(Handle);
-        Native.SetBorderColor(Handle, T.Border);
+        ApplyChrome();
+    }
+
+    void ApplyChrome()
+    {
+        Native.SetBorderColor(Handle, T.Glass ? (T.Dark ? Color.FromArgb(92, 94, 104) : Color.FromArgb(200, 202, 210)) : T.Opaque(T.Border));
+        GlassHost.SetBlur(Handle, T.Glass);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (GlassHost.Handle(this, ref m, _buf, g => OnPaint(new PaintEventArgs(g, ClientRectangle)))) return;
+        base.WndProc(ref m);
+    }
+
+    public void PaintLayer(Graphics g, Size size) => T.PaintBackdrop(g, new Rectangle(Point.Empty, size), sheen: true);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _buf.Dispose();
+        base.Dispose(disposing);
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs e)
@@ -218,12 +239,11 @@ internal abstract class CardForm : Form
     public void ApplyTheme()
     {
         BackColor = T.Bg;
-        if (IsHandleCreated) Native.SetBorderColor(Handle, T.Border);
+        if (IsHandleCreated) ApplyChrome();
         Relayout();
         Invalidate();
     }
 
-    protected override void OnPaintBackground(PaintEventArgs e) => T.PaintBackdrop(e.Graphics, ClientRectangle);
 
     /// <summary>Position near the tray: above the taskbar, horizontally centred on the anchor when known.</summary>
     protected Point PlaceNearTray(Size size, Rectangle? anchor)

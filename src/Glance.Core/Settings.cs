@@ -64,6 +64,7 @@ public sealed class AppSettings
     public bool AutoInstallUpdates { get; set; }
     public DateTime LastUpdateCheck { get; set; }
     public string? SkippedVersion { get; set; }
+    public DateTime UpdateRemindedAt { get; set; }
 
     public Dictionary<string, DeviceSettings> Devices { get; set; } = new();
 
