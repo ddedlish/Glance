@@ -32,8 +32,13 @@ internal static class GlassHost
             var size = c.ClientSize;
             if (size.Width <= 0 || size.Height <= 0 || hdc == IntPtr.Zero) return true;
             bool glass = Theme.Current.Glass;
+            // Only the invalid part is rendered and copied (a tall scrolling page repaints just what is visible).
+            var dirty = Rectangle.Intersect(Rectangle.FromLTRB(ps.rcPaint.Left, ps.rcPaint.Top, ps.rcPaint.Right, ps.rcPaint.Bottom), new Rectangle(Point.Empty, size));
+            if (dirty.IsEmpty) return true;
             using (var g = buf.Begin(size))
             {
+                g.SetClip(dirty);
+                g.Clear(Color.Transparent);
                 bool prev = Painter.SoftText;
                 Painter.SoftText = glass; // GDI ClearType would write alpha 0 → see-through text on glass
                 try
@@ -46,7 +51,7 @@ internal static class GlassHost
                 catch (Exception e) { Log.Error("Paint " + c.GetType().Name, e); }
                 finally { Painter.SoftText = prev; }
             }
-            buf.Present(hdc, size);
+            buf.Present(hdc, dirty);
         }
         finally { EndPaint(c.Handle, ref ps); }
         return true;
@@ -123,15 +128,15 @@ internal sealed class AlphaBuffer : IDisposable
     public Graphics Begin(Size size)
     {
         if (_bmp is null || size != _size) Recreate(size);
-        var g = Graphics.FromImage(_bmp!);
-        g.Clear(Color.Transparent);
-        return g;
+        return Graphics.FromImage(_bmp!);
     }
 
-    public void Present(IntPtr hdc, Size size)
+    public void Present(IntPtr hdc, Rectangle r)
     {
         if (_dc == IntPtr.Zero) return;
-        BitBlt(hdc, 0, 0, Math.Min(size.Width, _size.Width), Math.Min(size.Height, _size.Height), _dc, 0, 0, 0x00CC0020 /*SRCCOPY*/);
+        r.Intersect(new Rectangle(Point.Empty, _size));
+        if (r.IsEmpty) return;
+        BitBlt(hdc, r.X, r.Y, r.Width, r.Height, _dc, r.X, r.Y, 0x00CC0020 /*SRCCOPY*/);
     }
 
     void Recreate(Size size)
@@ -250,23 +255,63 @@ internal sealed class GlassScroller : GlassPanel
         ScrollTo(_offset);
     }
 
+    /// <summary>Jumps to <paramref name="y"/> (drag, keyboard focus, layout).</summary>
     public void ScrollTo(int y)
     {
-        int v = Math.Clamp(y, 0, Max);
+        _anim?.Cancel();
+        _anim = null;
+        _target = Math.Clamp(y, 0, Max);
+        Apply(_target);
+    }
+
+    /// <summary>Smooth wheel scrolling: eases towards an accumulating target (~60 fps, 220 ms).</summary>
+    public void ScrollBy(int dy)
+    {
+        int from = _offset;
+        _target = Math.Clamp((_anim is null ? _offset : _target) + dy, 0, Max);
+        int to = _target;
+        _anim?.Cancel();
+        if (to == from) { _anim = null; return; }
+        _anim = Animator.Run(220, p => { if (!IsDisposed) Apply(from + (int)MathF.Round((to - from) * p)); }, () => _anim = null);
+    }
+
+    int _target;
+    Animator.Anim? _anim;
+
+    const int WM_SETREDRAW = 0x000B;
+    const uint RDW_INVALIDATE = 0x1, RDW_ALLCHILDREN = 0x80, RDW_UPDATENOW = 0x100, RDW_FRAME = 0x400;
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr SendMessageW(IntPtr h, int msg, IntPtr w, IntPtr l);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr h, IntPtr rect, IntPtr rgn, uint flags);
+
+    /// <summary>
+    /// Moves the content with redraw frozen, then repaints the whole viewport in one go: every row appears at its
+    /// new place in the same frame — no torn strips while scrolling.
+    /// </summary>
+    void Apply(int v)
+    {
+        v = Math.Clamp(v, 0, Max);
         _offset = v;
-        if (Content.Top != -v) Content.Top = -v;
+        if (Content.Top != -v)
+        {
+            if (IsHandleCreated)
+            {
+                SendMessageW(Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                Content.Top = -v;
+                SendMessageW(Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME);
+            }
+            else Content.Top = -v;
+        }
         if (_bar is null) return;
         _bar.Visible = Max > 0;
         _bar.Invalidate();
     }
 
-    public void ScrollBy(int dy) => ScrollTo(_offset + dy);
-
     public void EnsureVisible(Control c)
     {
         int top = c.Top, bottom = c.Bottom, pad = (int)(12 * DeviceDpi / 96f);
-        if (top - pad < _offset) ScrollTo(top - pad);
-        else if (bottom + pad > _offset + ClientSize.Height) ScrollTo(bottom + pad - ClientSize.Height);
+        if (top - pad < _offset) ScrollBy(top - pad - _offset);
+        else if (bottom + pad > _offset + ClientSize.Height) ScrollBy(bottom + pad - ClientSize.Height - _offset);
     }
 
     protected override void OnLayout(LayoutEventArgs e)
@@ -275,7 +320,7 @@ internal sealed class GlassScroller : GlassPanel
         int w = (int)(12 * DeviceDpi / 96f);
         Content.Width = ClientSize.Width;
         _bar?.SetBounds(ClientSize.Width - w, 0, w, ClientSize.Height);
-        ScrollTo(_offset);
+        if (_anim is null) ScrollTo(_offset);
     }
 
     sealed class Indicator : GlassPanel
