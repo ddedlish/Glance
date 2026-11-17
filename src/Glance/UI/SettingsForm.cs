@@ -34,9 +34,13 @@ internal sealed class SettingsForm : Form
 
     void OnTheme()
     {
-        if (IsDisposed) return;
-        Build();
-        ApplyChrome();
+        // Deferred: the change may come from one of this form's own controls, which Build() disposes.
+        Ui.Post(() =>
+        {
+            if (IsDisposed) return;
+            Build();
+            ApplyChrome();
+        });
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -115,6 +119,11 @@ internal sealed class SettingsForm : Form
             sg.SelectedChanged += () => { set(sg.Selected); _s.NotifyChanged(); };
             return sg;
         }
+
+        // ── Оформление ──
+        Section("Оформление");
+        Row("Стиль", "Liquid Glass — стекло, блики и яркие цвета. Классика — строгий плоский вид", Seg(new[] { "Liquid Glass", "Классика" },
+            _s.LiquidGlass ? 0 : 1, i => _s.LiquidGlass = i == 0));
 
         // ── Трей ──
         Section("Значки в трее");
@@ -255,7 +264,7 @@ internal sealed class InputForm : Form
         {
             Text = value,
             Font = Fonts.Regular(14 * sc),
-            BackColor = t.Surface,
+            BackColor = t.SurfaceSolid,
             ForeColor = t.Text,
             BorderStyle = BorderStyle.FixedSingle,
             Location = new Point(Px(20), Px(42)),
@@ -302,7 +311,7 @@ internal static class Menus
         {
             Renderer = new ThemedRenderer(),
             ShowImageMargin = false,
-            BackColor = t.Surface,
+            BackColor = t.SurfaceSolid,
             ForeColor = t.Text,
             Font = MenuFont,
             Padding = new Padding(2, 4, 2, 4),
@@ -336,7 +345,7 @@ internal static class Menus
     {
         public ThemedRenderer() : base(new Colors()) { RoundedEdges = false; }
 
-        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e) => e.Graphics.Clear(Theme.Current.Surface);
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e) => e.Graphics.Clear(Theme.Current.SurfaceSolid);
         protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { /* DWM draws the border */ }
 
         protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
@@ -344,7 +353,7 @@ internal static class Menus
             if (!e.Item.Selected || !e.Item.Enabled) return;
             Painter.Prepare(e.Graphics);
             var r = new RectangleF(4, 1, e.Item.Width - 8, e.Item.Height - 2);
-            Painter.FillRound(e.Graphics, r, 4, Theme.Current.SurfaceHover);
+            Painter.FillRound(e.Graphics, r, 4, Theme.Current.SurfaceHoverSolid);
         }
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
@@ -370,13 +379,13 @@ internal static class Menus
 
     sealed class Colors : ProfessionalColorTable
     {
-        public override Color ToolStripDropDownBackground => Theme.Current.Surface;
+        public override Color ToolStripDropDownBackground => Theme.Current.SurfaceSolid;
         public override Color MenuBorder => Theme.Current.Border;
         public override Color MenuItemBorder => Color.Transparent;
-        public override Color MenuItemSelected => Theme.Current.SurfaceHover;
-        public override Color ImageMarginGradientBegin => Theme.Current.Surface;
-        public override Color ImageMarginGradientMiddle => Theme.Current.Surface;
-        public override Color ImageMarginGradientEnd => Theme.Current.Surface;
+        public override Color MenuItemSelected => Theme.Current.SurfaceHoverSolid;
+        public override Color ImageMarginGradientBegin => Theme.Current.SurfaceSolid;
+        public override Color ImageMarginGradientMiddle => Theme.Current.SurfaceSolid;
+        public override Color ImageMarginGradientEnd => Theme.Current.SurfaceSolid;
         public override Color SeparatorDark => Theme.Current.Border;
         public override Color SeparatorLight => Theme.Current.Border;
     }

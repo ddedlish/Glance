@@ -77,8 +77,10 @@ internal static class DeviceCard
     public static void Draw(Graphics g, RectangleF r, Accessory a, float s, bool hot, bool detailed)
     {
         var t = Theme.Current;
-        Painter.FillRound(g, r, 8 * s, hot ? t.SurfaceHover : t.Surface);
-        Painter.StrokeRound(g, r, 8 * s, t.Border, Math.Max(1, s));
+        float cr = (t.Glass ? 12 : 8) * s;
+        Painter.FillRound(g, r, cr, hot ? t.SurfaceHover : t.Surface);
+        Painter.GlassSheen(g, r, cr, t.Dark);
+        Painter.StrokeRound(g, r, cr, t.Border, Math.Max(1, s));
 
         bool dim = !a.Connected;
         var text = dim ? t.SubText : t.Text;
@@ -218,7 +220,7 @@ internal abstract class CardForm : Form
         Invalidate();
     }
 
-    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(T.Bg);
+    protected override void OnPaintBackground(PaintEventArgs e) => T.PaintBackdrop(e.Graphics, ClientRectangle);
 
     /// <summary>Position near the tray: above the taskbar, horizontally centred on the anchor when known.</summary>
     protected Point PlaceNearTray(Size size, Rectangle? anchor)

@@ -23,6 +23,7 @@ public sealed class AppSettings
     public TrayMode TrayMode { get; set; } = TrayMode.PerDevice;
     public IconStyle IconStyle { get; set; } = IconStyle.Battery;
     public bool RichHover { get; set; } = true;
+    public bool LiquidGlass { get; set; } = true;
 
     // Notifications
     public bool ShowConnectPopup { get; set; } = true;

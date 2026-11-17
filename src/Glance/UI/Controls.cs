@@ -25,7 +25,7 @@ internal abstract class ThemedControl : Control
     protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
     protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
 
-    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(Parent?.BackColor ?? T.Bg);
+    protected override void OnPaintBackground(PaintEventArgs e) => e.Graphics.Clear(T.Opaque(Parent?.BackColor ?? T.Bg));
 
     protected void FocusRing(Graphics g)
     {
@@ -326,7 +326,7 @@ internal sealed class SettingRow : Control
 
     public override Color BackColor
     {
-        get => Theme.Current.Surface;
+        get => Theme.Current.SurfaceSolid;
         set { }
     }
 }

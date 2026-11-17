@@ -265,25 +265,211 @@ internal static class IconRenderer
         return Fg;
     }
 
+    const int Supersample = 8;
+
+    /// <summary>
+    /// Renders the tray icon at 8× the tray size and downsamples with high-quality bicubic filtering:
+    /// crisp, evenly antialiased edges and digits at every DPI (16–32 px), no blur.
+    /// </summary>
     public static Icon Device(int? level, bool charging, IconStyle style, int low)
     {
-        int sz = Size;
-        using var bmp = new Bitmap(sz, sz, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(bmp))
+        int sz = Size, big = sz * Supersample;
+        using var hi = new Bitmap(big, big, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(hi))
         {
             g.Clear(Color.Transparent);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            switch (style)
+            g.TextRenderingHint = TextRenderingHint.AntiAlias;
+            Painter.SoftText = true;
+            try
             {
-                case IconStyle.Number: DrawNumber(g, sz, level, charging, low); break;
-                case IconStyle.BatteryNumber: DrawBatteryNumber(g, sz, level, charging, low); break;
-                default: DrawBattery(g, sz, level, charging, low); break;
+                if (Theme.Current.Glass)
+                {
+                    if (style == IconStyle.Number) GlassNumber(g, big, level, charging, low);
+                    else GlassBattery(g, big, level, charging, low, digits: style == IconStyle.BatteryNumber);
+                }
+                else switch (style)
+                {
+                    case IconStyle.Number: DrawNumber(g, big, level, charging, low); break;
+                    case IconStyle.BatteryNumber: DrawBatteryNumber(g, big, level, charging, low); break;
+                    default: DrawBattery(g, big, level, charging, low); break;
+                }
             }
+            finally { Painter.SoftText = false; }
         }
+        using var bmp = Downsample(hi, sz);
         return ToIcon(bmp);
     }
+
+    static Bitmap Downsample(Bitmap src, int size)
+    {
+        var dst = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(dst);
+        g.Clear(Color.Transparent);
+        g.CompositingMode = CompositingMode.SourceCopy;
+        g.CompositingQuality = CompositingQuality.HighQuality;
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        g.SmoothingMode = SmoothingMode.HighQuality;
+        using var ia = new ImageAttributes();
+        ia.SetWrapMode(WrapMode.TileFlipXY); // no dark fringes at the edges
+        g.DrawImage(src, new Rectangle(0, 0, size, size), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel, ia);
+        return dst;
+    }
+
+    // ───────────── Liquid Glass ─────────────
+
+    static Color GlassFill(int? level, bool charging, int low)
+    {
+        if (level is null) return Color.FromArgb(150, 150, 160);
+        if (charging) return Theme.VividCyan;
+        if (level <= Math.Max(5, low / 2)) return Theme.VividRed;
+        if (level <= low) return Theme.VividAmber;
+        return Theme.VividGreen;
+    }
+
+    static Color Lighten(Color c, float t) => Theme.Mix(c, Color.White, t);
+
+    /// <summary>Glass battery: frosted translucent body, glossy vivid level, specular rim, optional fitted digits.</summary>
+    static void GlassBattery(Graphics g, int S, int? level, bool charging, int low, bool digits)
+    {
+        float u = S / 16f;
+        bool dark = Dark;
+        // Digits variant: the battery fills the whole icon and the level becomes a glossy bar along the bottom,
+        // so the number sits on dark glass with maximum contrast and size (readable even at 16 px).
+        var body = digits ? new RectangleF(0.3f * u, 1.3f * u, 13.9f * u, 13.4f * u) : new RectangleF(0.6f * u, 3.7f * u, 12.7f * u, 8.6f * u);
+        float rad = digits ? 3.2f * u : body.Height * 0.34f;
+        var fill = GlassFill(level, charging, low);
+
+        // soft contrast halo so the icon reads on any taskbar colour / wallpaper
+        using (var halo = new Pen(dark ? Color.FromArgb(110, 0, 0, 0) : Color.FromArgb(140, 255, 255, 255), 1.6f * u) { LineJoin = LineJoin.Round })
+        using (var hp = Painter.Round(body, rad)) g.DrawPath(halo, hp);
+
+        // frosted glass body
+        using (var bp = Painter.Round(body, rad))
+        using (var gb = new LinearGradientBrush(body, dark ? Color.FromArgb(80, 255, 255, 255) : Color.FromArgb(70, 0, 0, 0),
+                                                       dark ? Color.FromArgb(22, 255, 255, 255) : Color.FromArgb(22, 0, 0, 0), LinearGradientMode.Vertical))
+            g.FillPath(gb, bp);
+
+        // glossy vivid level
+        float pad = 1.25f * u;
+        var inner = RectangleF.Inflate(body, -pad, -pad);
+        if (digits) pad = 1.1f * u;
+        inner = RectangleF.Inflate(body, -pad, -pad);
+        float frac = level is int l ? Math.Clamp(l / 100f, 0.07f, 1f) : 0;
+        if (frac > 0)
+        {
+            var lv = digits
+                ? new RectangleF(inner.X, inner.Bottom - 2.7f * u, inner.Width * frac, 2.7f * u)
+                : new RectangleF(inner.X, inner.Y, inner.Width * frac, inner.Height);
+            float lr = digits ? lv.Height / 2 : Math.Max(0.5f * u, rad - pad);
+            using var lp = Painter.Round(lv, lr);
+            using (var lg = new LinearGradientBrush(new RectangleF(lv.X, lv.Y - 1, lv.Width, lv.Height + 2), Lighten(fill, 0.35f), fill, LinearGradientMode.Vertical))
+                g.FillPath(lg, lp);
+            var state = g.Save();
+            g.SetClip(lp);
+            using (var sheen = new LinearGradientBrush(new RectangleF(lv.X, lv.Y - 1, lv.Width, lv.Height * 0.55f + 2),
+                       Color.FromArgb(150, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Vertical))
+                g.FillRectangle(sheen, lv.X, lv.Y, lv.Width, lv.Height * 0.55f);
+            g.Restore(state);
+        }
+
+        // rim + specular top edge
+        var rimColor = dark ? Color.FromArgb(240, 255, 255, 255) : Color.FromArgb(215, 25, 25, 30);
+        using (var pen = new Pen(rimColor, 1.05f * u))
+        using (var rp = Painter.Round(RectangleF.Inflate(body, -0.5f * u, -0.5f * u), rad))
+            g.DrawPath(pen, rp);
+        using (var spec = new Pen(Color.FromArgb(dark ? 130 : 200, 255, 255, 255), 0.55f * u) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawLine(spec, body.X + rad, body.Y + 1.35f * u, body.Right - rad, body.Y + 1.35f * u);
+
+        // tip
+        using (var tb = new SolidBrush(rimColor))
+        using (var tp = Painter.Round(new RectangleF(body.Right + 0.4f * u, body.Y + body.Height * 0.34f, (digits ? 1.2f : 1.7f) * u, body.Height * 0.32f), 0.6f * u))
+            g.FillPath(tb, tp);
+
+        if (digits)
+        {
+            string s = level is int lvv ? Math.Clamp(lvv, 0, 100).ToString() : "?";
+            var box = new RectangleF(inner.X + 0.25f * u, inner.Y + 0.35f * u, inner.Width - 0.5f * u, inner.Height - 3.6f * u);
+            var tc = level is int lw && lw <= low && !charging ? Lighten(fill, 0.15f) : (dark ? Color.White : Color.FromArgb(20, 20, 24));
+            FitText(g, s, box, tc, dark ? Color.FromArgb(170, 0, 0, 0) : Color.FromArgb(150, 255, 255, 255), 0.5f * u);
+        }
+        else
+        {
+            if (level is null) FitText(g, "?", RectangleF.Inflate(inner, -inner.Width * 0.3f, -inner.Height * 0.12f), Color.White, Color.FromArgb(150, 0, 0, 0), 0.5f * u);
+            if (charging) Bolt(g, RectangleF.Inflate(body, 0, -0.2f * u));
+        }
+    }
+
+    /// <summary>Big fitted digits (always the whole number, 100 included) over a glossy capsule level bar.</summary>
+    static void GlassNumber(Graphics g, int S, int? level, bool charging, int low)
+    {
+        float u = S / 16f;
+        var fill = GlassFill(level, charging, low);
+        string s = level is int l ? Math.Clamp(l, 0, 100).ToString() : "?";
+        var textColor = level is int lw && lw <= low && !charging ? fill : (Dark ? Color.White : Color.FromArgb(20, 20, 24));
+        var shadow = Dark ? Color.FromArgb(170, 0, 0, 0) : Color.FromArgb(170, 255, 255, 255);
+        FitText(g, s, new RectangleF(0.2f * u, 0.4f * u, 15.6f * u, 10.6f * u), textColor, shadow, 0.6f * u);
+
+        var bar = new RectangleF(1.0f * u, 12.4f * u, 14f * u, 3.0f * u);
+        using (var bp = Painter.Round(bar, bar.Height / 2))
+        using (var bg = new SolidBrush(Dark ? Color.FromArgb(70, 255, 255, 255) : Color.FromArgb(55, 0, 0, 0)))
+            g.FillPath(bg, bp);
+        float frac = level is int lv ? Math.Clamp(lv / 100f, 0.08f, 1f) : 0;
+        if (frac > 0)
+        {
+            var f = new RectangleF(bar.X, bar.Y, Math.Max(bar.Height, bar.Width * frac), bar.Height);
+            using var fp = Painter.Round(f, bar.Height / 2);
+            using var lg = new LinearGradientBrush(new RectangleF(f.X, f.Y - 1, f.Width, f.Height + 2), Lighten(fill, 0.4f), fill, LinearGradientMode.Vertical);
+            g.FillPath(lg, fp);
+        }
+    }
+
+    static readonly string DigitFamily = PickDigitFamily();
+
+    static string PickDigitFamily()
+    {
+        try
+        {
+            using var col = new InstalledFontCollection();
+            var names = col.Families.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var n in new[] { "Bahnschrift SemiBold SemiConden", "Bahnschrift SemiBold Condensed", "Bahnschrift SemiBold", "Segoe UI Variable Display Semib", "Segoe UI Semibold" })
+                if (names.Contains(n)) return n;
+        }
+        catch { }
+        return "Segoe UI";
+    }
+
+    /// <summary>Scales the text outline to fill <paramref name="box"/> exactly — never clipped, as large as possible.</summary>
+    static void FitText(Graphics g, string s, RectangleF box, Color fill, Color shadow, float shadowOffset)
+    {
+        using var path = new GraphicsPath();
+        using var ff = new FontFamily(DigitFamily);
+        var style = DigitFamily == "Segoe UI" ? FontStyle.Bold : FontStyle.Regular;
+        path.AddString(s, ff, (int)style, 100f, PointF.Empty, StringFormat.GenericTypographic);
+        var b = path.GetBounds();
+        if (b.Width <= 0 || b.Height <= 0) return;
+        float sc = Math.Min(box.Width / b.Width, box.Height / b.Height);
+        using (var m = new Matrix())
+        {
+            m.Translate(box.X + (box.Width - b.Width * sc) / 2, box.Y + (box.Height - b.Height * sc) / 2);
+            m.Scale(sc, sc);
+            m.Translate(-b.X, -b.Y);
+            path.Transform(m);
+        }
+        if (shadow.A > 0)
+        {
+            using var sp = (GraphicsPath)path.Clone();
+            using (var sm = new Matrix()) { sm.Translate(0, shadowOffset); sp.Transform(sm); }
+            using (var spen = new Pen(shadow, shadowOffset * 1.6f) { LineJoin = LineJoin.Round }) g.DrawPath(spen, sp);
+            using (var sb = new SolidBrush(shadow)) g.FillPath(sb, sp);
+        }
+        using var fb = new SolidBrush(fill);
+        g.FillPath(fb, path);
+    }
+
+    // ───────────── Classic ─────────────
 
     /// <summary>Horizontal battery that visibly drains; bolt when charging.</summary>
     static void DrawBattery(Graphics g, int sz, int? level, bool charging, int low)
@@ -346,19 +532,17 @@ internal static class IconRenderer
         using (var tip = new SolidBrush(Fg))
             g.FillRectangle(tip, body.Right + 0.5f * u, body.Y + body.Height * 0.32f, tipW, body.Height * 0.36f);
 
-        string s = level is int lv ? (lv >= 100 ? "100" : lv.ToString()) : "?";
-        float px = s.Length >= 3 ? body.Height * 0.62f : body.Height * 0.82f;
-        OutlinedText(g, s, px, body, Fg, Halo);
+        string s = level is int lv ? Math.Clamp(lv, 0, 100).ToString() : "?";
+        FitText(g, s, RectangleF.Inflate(body, -body.Width * 0.08f, -body.Height * 0.16f), Fg, Halo, 0.5f * u);
         if (charging && sz >= 24) Bolt(g, new RectangleF(body.Right - body.Height * 0.55f, body.Y, body.Height * 0.55f, body.Height * 0.55f));
     }
 
     static void DrawNumber(Graphics g, int sz, int? level, bool charging, int low)
     {
-        string s = level is int l ? (l >= 100 ? "100" : l.ToString()) : "?";
+        string s = level is int l ? Math.Clamp(l, 0, 100).ToString() : "?";
         float barH = Math.Max(2f, sz / 8f);
-        float px = s.Length >= 3 ? sz * 0.56f : sz * 0.82f;
         bool isLow = level is int l0 && l0 <= low && !charging;
-        OutlinedText(g, s, px, new RectangleF(0, -barH / 2, sz, sz), isLow ? LowColor : Fg, Halo);
+        FitText(g, s, new RectangleF(sz * 0.02f, sz * 0.03f, sz * 0.96f, sz - barH - sz * 0.1f), isLow ? LowColor : Fg, Halo, sz / 32f);
 
         float frac = level is int lv ? Math.Clamp(lv / 100f, 0.06f, 1f) : 0;
         using var track = new SolidBrush(Theme.Alpha(Fg, 70));
@@ -405,7 +589,9 @@ internal static class IconRenderer
         {
             g.Clear(Color.Transparent);
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            Painter.Glyph(g, Glyphs.Bluetooth, sz * 0.82f, Fg, new RectangleF(0, 0, sz, sz));
+            Painter.SoftText = true;
+            try { Painter.Glyph(g, Glyphs.Bluetooth, sz * 0.82f, Fg, new RectangleF(0, 0, sz, sz)); }
+            finally { Painter.SoftText = false; }
         }
         return ToIcon(bmp);
     }

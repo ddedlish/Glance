@@ -12,10 +12,34 @@ internal sealed class Theme
     public bool TaskbarDark { get; private init; }
     public Color Accent { get; private init; }
 
-    public Color Bg => Dark ? Color.FromArgb(32, 32, 32) : Color.FromArgb(243, 243, 243);
-    public Color Surface => Dark ? Color.FromArgb(43, 43, 43) : Color.FromArgb(251, 251, 251);
-    public Color SurfaceHover => Dark ? Color.FromArgb(52, 52, 52) : Color.FromArgb(245, 245, 245);
-    public Color Border => Dark ? Color.FromArgb(60, 60, 60) : Color.FromArgb(222, 222, 222);
+    /// <summary>Liquid Glass look: vivid gradient backdrops, frosted translucent cards, specular highlights.</summary>
+    public bool Glass { get; private init; }
+
+    static bool _glassWanted = true;
+
+    public Color Bg => Glass
+        ? (Dark ? Color.FromArgb(18, 20, 28) : Color.FromArgb(236, 240, 248))
+        : (Dark ? Color.FromArgb(32, 32, 32) : Color.FromArgb(243, 243, 243));
+    public Color Surface => Glass
+        ? (Dark ? Color.FromArgb(30, 255, 255, 255) : Color.FromArgb(165, 255, 255, 255))
+        : (Dark ? Color.FromArgb(43, 43, 43) : Color.FromArgb(251, 251, 251));
+    public Color SurfaceHover => Glass
+        ? (Dark ? Color.FromArgb(48, 255, 255, 255) : Color.FromArgb(215, 255, 255, 255))
+        : (Dark ? Color.FromArgb(52, 52, 52) : Color.FromArgb(245, 245, 245));
+    public Color Border => Glass
+        ? (Dark ? Color.FromArgb(52, 255, 255, 255) : Color.FromArgb(46, 0, 0, 0))
+        : (Dark ? Color.FromArgb(60, 60, 60) : Color.FromArgb(222, 222, 222));
+
+    /// <summary>Solid equivalent of a (possibly translucent) colour over the window background — for WinForms controls.</summary>
+    public Color Opaque(Color c) => c.A == 255 ? c : Color.FromArgb(255, Mix(Bg, Color.FromArgb(255, c), c.A / 255f));
+    public Color SurfaceSolid => Opaque(Surface);
+    public Color SurfaceHoverSolid => Opaque(SurfaceHover);
+
+    // Vivid status palette (Liquid Glass) — same hues in tray icons and windows.
+    public static readonly Color VividGreen = Color.FromArgb(48, 209, 88);
+    public static readonly Color VividAmber = Color.FromArgb(255, 159, 10);
+    public static readonly Color VividRed = Color.FromArgb(255, 69, 58);
+    public static readonly Color VividCyan = Color.FromArgb(100, 210, 255);
     public Color Text => Dark ? Color.FromArgb(255, 255, 255) : Color.FromArgb(27, 27, 27);
     public Color SubText => Dark ? Color.FromArgb(166, 166, 166) : Color.FromArgb(96, 96, 96);
     public Color Track => Dark ? Color.FromArgb(70, 70, 70) : Color.FromArgb(220, 220, 220);
@@ -32,9 +56,16 @@ internal sealed class Theme
     public static void Refresh()
     {
         var t = Load();
-        if (t.Dark == Current.Dark && t.TaskbarDark == Current.TaskbarDark && t.Accent == Current.Accent) return;
+        if (t.Dark == Current.Dark && t.TaskbarDark == Current.TaskbarDark && t.Accent == Current.Accent && t.Glass == Current.Glass) return;
         Current = t;
         Changed?.Invoke();
+    }
+
+    /// <summary>Switches between Liquid Glass and the classic flat look.</summary>
+    public static void SetGlass(bool glass)
+    {
+        _glassWanted = glass;
+        Refresh();
     }
 
     static Theme Load()
@@ -58,7 +89,7 @@ internal sealed class Theme
             }
         }
         catch { }
-        return new Theme { Dark = !appsLight, TaskbarDark = !sysLight, Accent = accent };
+        return new Theme { Dark = !appsLight, TaskbarDark = !sysLight, Accent = accent, Glass = _glassWanted };
     }
 
     public Color LevelColor(int? level, bool charging, int low)
@@ -73,10 +104,42 @@ internal sealed class Theme
     public Color BarColor(int? level, bool charging, int low)
     {
         if (level is not int l) return Track;
+        if (Glass)
+        {
+            if (charging) return VividGreen;
+            if (l <= Math.Max(5, low / 2)) return VividRed;
+            if (l <= low) return VividAmber;
+            return VividGreen;
+        }
         if (charging) return Good;
         if (l <= Math.Max(5, low / 2)) return Bad;
         if (l <= low) return Warn;
         return AccentFill;
+    }
+
+    /// <summary>Paints the window backdrop: vivid blurred colour blobs under a frosted veil (glass) or flat (classic).</summary>
+    public void PaintBackdrop(Graphics g, Rectangle r)
+    {
+        g.Clear(Bg);
+        if (!Glass || r.Width <= 0 || r.Height <= 0) return;
+        var state = g.Save();
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        void Blob(float cx, float cy, float rad, Color c, int alpha)
+        {
+            var rect = new RectangleF(r.X + cx * r.Width - rad, r.Y + cy * r.Height - rad, rad * 2, rad * 2);
+            using var path = new GraphicsPath();
+            path.AddEllipse(rect);
+            using var br = new PathGradientBrush(path) { CenterColor = Alpha(c, alpha), SurroundColors = new[] { Alpha(c, 0) } };
+            g.FillEllipse(br, rect);
+        }
+        float big = Math.Max(r.Width, r.Height);
+        Blob(0.05f, 0.0f, big * 0.75f, Accent, Dark ? 120 : 90);
+        Blob(1.0f, 0.15f, big * 0.6f, Color.FromArgb(175, 82, 222), Dark ? 100 : 70);
+        Blob(0.7f, 1.05f, big * 0.7f, Color.FromArgb(48, 176, 199), Dark ? 90 : 70);
+        // frosted veil
+        using (var veil = new SolidBrush(Dark ? Color.FromArgb(70, 12, 14, 20) : Color.FromArgb(90, 255, 255, 255)))
+            g.FillRectangle(veil, r);
+        g.Restore(state);
     }
 
     public static Color Mix(Color a, Color b, float t) => Color.FromArgb(
@@ -263,10 +326,46 @@ internal static class Painter
         }
     }
 
+    /// <summary>
+    /// When true, text is drawn with GDI+ antialiasing (needed on transparent bitmaps: tray icons, layered banner).
+    /// Otherwise text uses GDI/ClearType via TextRenderer — noticeably sharper on opaque window surfaces.
+    /// </summary>
+    [ThreadStatic] public static bool SoftText;
+
+    /// <summary>Liquid Glass specular highlight: soft white sheen over the top of a rounded shape.</summary>
+    public static void GlassSheen(Graphics g, RectangleF r, float radius, bool dark)
+    {
+        if (!Theme.Current.Glass || r.Height < 4) return;
+        var top = new RectangleF(r.X, r.Y, r.Width, r.Height * 0.55f);
+        var state = g.Save();
+        using (var clip = Round(r, radius)) g.SetClip(clip);
+        using (var br = new LinearGradientBrush(new RectangleF(top.X, top.Y - 1, top.Width, top.Height + 2),
+                   Color.FromArgb(dark ? 34 : 120, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Vertical))
+            g.FillRectangle(br, top);
+        g.Restore(state);
+        // bright 1px rim on the upper edge
+        using var pen = new Pen(Color.FromArgb(dark ? 70 : 160, 255, 255, 255), 1f);
+        using var rim = Round(RectangleF.Inflate(r, -0.5f, -0.5f), radius);
+        var st2 = g.Save();
+        g.SetClip(new RectangleF(r.X, r.Y, r.Width, Math.Min(r.Height, radius * 1.6f + 2)));
+        g.DrawPath(pen, rim);
+        g.Restore(st2);
+    }
+
     public static void Text(Graphics g, string s, Font f, Color c, RectangleF r,
         StringAlignment h = StringAlignment.Near, StringAlignment v = StringAlignment.Center, bool wrap = false)
     {
         if (string.IsNullOrEmpty(s) || r.Width <= 1) return;
+        if (!SoftText)
+        {
+            var flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping;
+            flags |= wrap ? TextFormatFlags.WordBreak : (TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+            flags |= h switch { StringAlignment.Center => TextFormatFlags.HorizontalCenter, StringAlignment.Far => TextFormatFlags.Right, _ => TextFormatFlags.Left };
+            flags |= v switch { StringAlignment.Center => TextFormatFlags.VerticalCenter, StringAlignment.Far => TextFormatFlags.Bottom, _ => TextFormatFlags.Top };
+            var rc = Rectangle.FromLTRB((int)MathF.Floor(r.Left), (int)MathF.Floor(r.Top), (int)MathF.Ceiling(r.Right), (int)MathF.Ceiling(r.Bottom));
+            TextRenderer.DrawText(g, s, f, rc, Color.FromArgb(255, c), flags);
+            return;
+        }
         using var sf = new StringFormat(wrap ? 0 : StringFormatFlags.NoWrap)
         {
             Alignment = h,
@@ -277,8 +376,12 @@ internal static class Painter
         g.DrawString(s, f, b, r, sf);
     }
 
-    public static float Width(Graphics g, string s, Font f) =>
-        string.IsNullOrEmpty(s) ? 0 : g.MeasureString(s, f, int.MaxValue, StringFormat.GenericTypographic).Width;
+    public static float Width(Graphics g, string s, Font f)
+    {
+        if (string.IsNullOrEmpty(s)) return 0;
+        if (!SoftText) return TextRenderer.MeasureText(g, s, f, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
+        return g.MeasureString(s, f, int.MaxValue, StringFormat.GenericTypographic).Width;
+    }
 
     public static void Glyph(Graphics g, char glyph, float px, Color c, RectangleF r) =>
         Text(g, glyph.ToString(), Fonts.Icon(px), c, r, StringAlignment.Center, StringAlignment.Center);

@@ -42,6 +42,7 @@ internal sealed class AppHost : ApplicationContext
     public AppHost(bool autostart, bool afterUpdate)
     {
         _s = AppSettings.Load();
+        Theme.SetGlass(_s.LiquidGlass);
         _h = new HistoryStore();
         _r = new DeviceRegistry(_s, _h);
         Svc.Init(_s, _h, _r);
@@ -230,7 +231,8 @@ internal sealed class AppHost : ApplicationContext
 
     void SchedulePopup(Accessory a)
     {
-        if (_lastPopup.TryGetValue(a.Key, out var last) && (DateTime.Now - last).TotalSeconds < 90) return; // flapping connection
+        // Every connection gets its window; only a reconnect within a few seconds (radio flapping) is merged.
+        if (_lastPopup.TryGetValue(a.Key, out var last) && (DateTime.Now - last).TotalSeconds < 8) return;
         var since = a.ConnectedAt;
         Ui.Delay(1200, () => TryPopup(a, since, 0));
     }
@@ -497,6 +499,7 @@ internal sealed class AppHost : ApplicationContext
 
     void OnSettingsChanged()
     {
+        Theme.SetGlass(_s.LiquidGlass);
         _tray.SetHotkey(_s.Hotkey);
         RefreshPolling();
         UpdateBudsTargets(null);
