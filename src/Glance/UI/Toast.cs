@@ -19,8 +19,10 @@ internal sealed class ToastForm : CardForm
     float _grow = 1;
     Animator.Anim? _anim;
     bool _closing, _hover;
-    RectangleF _closeRect;
+    RectangleF _closeRect, _actionRect, _laterRect;
     int _baseY;
+    string? _action;      // sticky notification with buttons (new version available)
+    string _hotBtn = "";
 
     public event Action<ToastForm>? Finished;
 
@@ -43,6 +45,15 @@ internal sealed class ToastForm : CardForm
         Device = null;
         Kind = ToastKind.Message;
         _title = title; _text = text; _glyph = glyph; _onClick = onClick;
+        Present(animateRings: false);
+    }
+
+    /// <summary>Notification that stays until the user acts: «Обновить» / «Позже».</summary>
+    public void ShowAction(string title, string text, char glyph, string action, Action onAction)
+    {
+        Device = null;
+        Kind = ToastKind.Message;
+        _title = title; _text = text; _glyph = glyph; _onClick = onAction; _action = action;
         Present(animateRings: false);
     }
 
@@ -85,6 +96,7 @@ internal sealed class ToastForm : CardForm
     void RestartLife()
     {
         _life.Stop();
+        if (_action is not null) return; // sticky
         int secs = Math.Clamp(Svc.S.PopupSeconds, 2, 30);
         if (Kind == ToastKind.Low) secs += 3;
         _life.Interval = secs * 1000;
@@ -139,6 +151,7 @@ internal sealed class ToastForm : CardForm
             {
                 var sz = g.MeasureString(_text, Fonts.Regular(13 * Sc), (int)(Px(360) - Px(32)));
                 h = 16 + 22 + 4 + Math.Min(sz.Height / Sc, 60) + 16;
+                if (_action is not null) h += 48;
             }
         }
         else
@@ -172,7 +185,20 @@ internal sealed class ToastForm : CardForm
             var gr = new RectangleF(16 * s, 16 * s, 22 * s, 22 * s);
             Painter.Glyph(g, _glyph, 16 * s, t.AccentText, gr);
             Painter.Text(g, _title, Fonts.Strong(14.5f * s), t.Text, new RectangleF(46 * s, 15 * s, W - 90 * s, 24 * s));
-            Painter.Text(g, _text, Fonts.Regular(13 * s), t.SubText, new RectangleF(16 * s, 42 * s, W - 32 * s, Height - 52 * s), StringAlignment.Near, StringAlignment.Near, wrap: true);
+            float textBottom = Height - (_action is not null ? 64 : 12) * s;
+            Painter.Text(g, _text, Fonts.Regular(13 * s), t.SubText, new RectangleF(16 * s, 42 * s, W - 32 * s, textBottom - 42 * s), StringAlignment.Near, StringAlignment.Near, wrap: true);
+            if (_action is not null)
+            {
+                float by = Height - 52 * s, bh = 36 * s;
+                _actionRect = new RectangleF(W - 16 * s - 150 * s, by, 150 * s, bh);
+                _laterRect = new RectangleF(_actionRect.X - 8 * s - 96 * s, by, 96 * s, bh);
+                var fill = _hotBtn == "action" ? Theme.Mix(t.AccentFill, Color.White, 0.12f) : t.AccentFill;
+                Painter.FillRound(g, _actionRect, 10 * s, fill);
+                Painter.GlassSheen(g, _actionRect, 10 * s, t.Dark);
+                Painter.Text(g, _action, Fonts.Strong(13 * s), t.OnAccent, _actionRect, StringAlignment.Center);
+                Painter.FillRound(g, _laterRect, 10 * s, _hotBtn == "later" ? t.SurfaceHover : t.Surface);
+                Painter.Text(g, "Позже", Fonts.Regular(13 * s), t.Text, _laterRect, StringAlignment.Center);
+            }
             return;
         }
         if (Device is not Accessory a) return;
@@ -265,14 +291,29 @@ internal sealed class ToastForm : CardForm
     {
         base.OnMouseLeave(e);
         _hover = false;
-        if (!_closing) _life.Start();
+        _hotBtn = "";
+        if (!_closing && _action is null) _life.Start();
         Invalidate();
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        string hot = _actionRect.Contains(e.Location) ? "action" : _laterRect.Contains(e.Location) ? "later" : "";
+        if (hot != _hotBtn) { _hotBtn = hot; Invalidate(); }
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
         if (e.Button != MouseButtons.Left) { Dismiss(); return; }
+        if (_action is not null)
+        {
+            // Sticky: only the buttons (or the close cross) act; a stray click elsewhere does nothing.
+            if (_actionRect.Contains(e.Location)) { _onClick?.Invoke(); Dismiss(); }
+            else if (_laterRect.Contains(e.Location) || (_hover && _closeRect.Contains(e.Location))) Dismiss();
+            return;
+        }
         if (!_closeRect.Contains(e.Location)) _onClick?.Invoke();
         Dismiss();
     }
@@ -308,6 +349,13 @@ internal sealed class ToastManager
     {
         if (Visible) { _queue.Enqueue(() => ShowMessage(title, text, glyph, onClick)); return; }
         Replace(f => f.ShowMessage(title, text, glyph, onClick));
+    }
+
+    /// <summary>Sticky notification (new version): stays above the taskbar until «Обновить» or «Позже».</summary>
+    public void ShowAction(string title, string text, char glyph, string action, Action onAction)
+    {
+        if (Visible) { _queue.Enqueue(() => ShowAction(title, text, glyph, action, onAction)); return; }
+        Replace(f => f.ShowAction(title, text, glyph, action, onAction));
     }
 
     void Replace(Action<ToastForm> show)

@@ -549,7 +549,7 @@ internal sealed class AppHost : ApplicationContext
                 _s.SkippedVersion = r.Tag;
                 _s.UpdateRemindedAt = DateTime.UtcNow;
                 _s.Save();
-                _toasts.ShowMessage($"Доступна версия {r.VersionText}", "Нажмите, чтобы обновить. Настройки и история сохранятся.", Glyphs.Download,
+                _toasts.ShowAction($"Доступна версия {r.VersionText}", UpdateSummary(r), Glyphs.Download, "Обновить",
                     () => _ = InstallUpdateAsync(r));
             }
             return $"Доступна версия {r.VersionText}";
@@ -559,6 +559,17 @@ internal sealed class AppHost : ApplicationContext
             Log.Error("Update check", e);
             return "Не удалось проверить: " + e.Message;
         }
+    }
+
+    /// <summary>First item of the release notes, so the notification says what is new.</summary>
+    static string UpdateSummary(UpdateService.Release r)
+    {
+        var line = (r.Notes ?? "").Split('\n').Select(l => l.Trim().TrimStart('-', '*', '•', ' ').Trim())
+            .FirstOrDefault(l => l.Length > 0 && !l.StartsWith('#') && !l.StartsWith("**", StringComparison.Ordinal));
+        string tail = "Настройки и история сохранятся.";
+        if (string.IsNullOrEmpty(line)) return "Скачается только изменившаяся часть. " + tail;
+        if (line.Length > 110) line = line[..107].TrimEnd() + "…";
+        return line + " " + tail;
     }
 
     string UpdateTip => $"⬆ Доступно обновление {_pending?.VersionText}";

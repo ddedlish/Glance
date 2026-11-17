@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Drawing.Text;
 using Microsoft.Win32;
 
@@ -356,14 +357,19 @@ internal static class Painter
         StringAlignment h = StringAlignment.Near, StringAlignment v = StringAlignment.Center, bool wrap = false)
     {
         if (string.IsNullOrEmpty(s) || r.Width <= 1) return;
+        var flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+        flags |= wrap ? TextFormatFlags.WordBreak : (TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+        flags |= h switch { StringAlignment.Center => TextFormatFlags.HorizontalCenter, StringAlignment.Far => TextFormatFlags.Right, _ => TextFormatFlags.Left };
+        flags |= v switch { StringAlignment.Center => TextFormatFlags.VerticalCenter, StringAlignment.Far => TextFormatFlags.Bottom, _ => TextFormatFlags.Top };
+        var rc = Rectangle.FromLTRB((int)MathF.Floor(r.Left), (int)MathF.Floor(r.Top), (int)MathF.Ceiling(r.Right), (int)MathF.Ceiling(r.Bottom));
         if (!SoftText)
         {
-            var flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping;
-            flags |= wrap ? TextFormatFlags.WordBreak : (TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
-            flags |= h switch { StringAlignment.Center => TextFormatFlags.HorizontalCenter, StringAlignment.Far => TextFormatFlags.Right, _ => TextFormatFlags.Left };
-            flags |= v switch { StringAlignment.Center => TextFormatFlags.VerticalCenter, StringAlignment.Far => TextFormatFlags.Bottom, _ => TextFormatFlags.Top };
-            var rc = Rectangle.FromLTRB((int)MathF.Floor(r.Left), (int)MathF.Floor(r.Top), (int)MathF.Ceiling(r.Right), (int)MathF.Ceiling(r.Bottom));
-            TextRenderer.DrawText(g, s, f, rc, Color.FromArgb(255, c), flags);
+            TextRenderer.DrawText(g, s, f, rc, Color.FromArgb(255, c), flags | TextFormatFlags.PreserveGraphicsClipping);
+            return;
+        }
+        if (rc.Width > 0 && rc.Height > 0 && (long)rc.Width * rc.Height <= 1_500_000 && f.Size < 120)
+        {
+            AlphaText.Draw(g, s, f, c, rc, flags);
             return;
         }
         using var sf = new StringFormat(wrap ? 0 : StringFormatFlags.NoWrap)
@@ -379,8 +385,8 @@ internal static class Painter
     public static float Width(Graphics g, string s, Font f)
     {
         if (string.IsNullOrEmpty(s)) return 0;
-        if (!SoftText) return TextRenderer.MeasureText(g, s, f, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
-        return g.MeasureString(s, f, int.MaxValue, StringFormat.GenericTypographic).Width;
+        // Same GDI metrics in both modes: glass text is rendered by GDI too (see AlphaText).
+        return TextRenderer.MeasureText(s, f, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
     }
 
     public static void Glyph(Graphics g, char glyph, float px, Color c, RectangleF r) =>
@@ -414,5 +420,90 @@ internal static class Painter
         }
         using var pen = new Pen(color, 1.5f * scale) { LineJoin = LineJoin.Round };
         g.DrawLines(pen, pts.ToArray());
+    }
+}
+
+/// <summary>
+/// Crisp text on transparent surfaces (glass windows, tray icons, the overlay banner). GDI+ antialiasing looks
+/// soft ("soapy"), and GDI ClearType writes no alpha, so the text is rendered by GDI with full hinting and
+/// ClearType into an opaque mask, and the per-subpixel coverage is turned into premultiplied colour + alpha.
+/// The result keeps the sharp stems of normal Windows text on any background. Bitmaps are cached (LRU).
+/// </summary>
+internal static class AlphaText
+{
+    const int MaxEntries = 256;
+    static readonly Dictionary<string, LinkedListNode<(string Key, Bitmap Bmp)>> Map = new();
+    static readonly LinkedList<(string Key, Bitmap Bmp)> Lru = new();
+    static readonly object Gate = new();
+
+    public static void Draw(Graphics g, string s, Font f, Color c, Rectangle rc, TextFormatFlags flags)
+    {
+        string key = string.Concat(s, "\u0001", f.Name, "|", f.Size.ToString(System.Globalization.CultureInfo.InvariantCulture), "|", ((int)f.Style).ToString(),
+            "\u0001", c.ToArgb().ToString(), "\u0001", rc.Width.ToString(), "x", rc.Height.ToString(), "\u0001", ((int)flags).ToString());
+        Bitmap bmp;
+        lock (Gate)
+        {
+            if (Map.TryGetValue(key, out var node)) { Lru.Remove(node); Lru.AddFirst(node); bmp = node.Value.Bmp; }
+            else
+            {
+                bmp = Render(s, f, c, rc.Size, flags);
+                Map[key] = Lru.AddFirst((key, bmp));
+                while (Lru.Count > MaxEntries)
+                {
+                    var last = Lru.Last!;
+                    Lru.RemoveLast();
+                    Map.Remove(last.Value.Key);
+                    last.Value.Bmp.Dispose();
+                }
+            }
+            var st = g.Save();
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.CompositingMode = CompositingMode.SourceOver;
+            g.DrawImage(bmp, rc, 0, 0, rc.Width, rc.Height, GraphicsUnit.Pixel);
+            g.Restore(st);
+        }
+    }
+
+    static Bitmap Render(string s, Font f, Color c, Size size, TextFormatFlags flags)
+    {
+        // Light text: white on black. Dark text: black on white (GDI picks the matching ClearType gamma).
+        bool darkText = 0.299 * c.R + 0.587 * c.G + 0.114 * c.B < 128;
+        using var mask = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppRgb);
+        using (var mg = Graphics.FromImage(mask))
+        {
+            mg.Clear(darkText ? Color.White : Color.Black);
+            TextRenderer.DrawText(mg, s, f, new Rectangle(Point.Empty, size), darkText ? Color.Black : Color.White, darkText ? Color.White : Color.Black, flags);
+        }
+        var dst = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
+        var rect = new Rectangle(Point.Empty, size);
+        var sd = mask.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+        var dd = dst.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+        try
+        {
+            int n = size.Width * 4;
+            var src = new byte[n];
+            var row = new byte[n];
+            int ca = c.A;
+            for (int y = 0; y < size.Height; y++)
+            {
+                System.Runtime.InteropServices.Marshal.Copy(sd.Scan0 + y * sd.Stride, src, 0, n);
+                for (int x = 0; x < n; x += 4)
+                {
+                    int cb = src[x], cg = src[x + 1], cr = src[x + 2];
+                    if (darkText) { cb = 255 - cb; cg = 255 - cg; cr = 255 - cr; }
+                    int a = Math.Max(cr, Math.Max(cg, cb));
+                    if (a == 0) { row[x] = row[x + 1] = row[x + 2] = row[x + 3] = 0; continue; }
+                    // premultiplied: channel = colour × its own subpixel coverage (≤ alpha), scaled by text alpha
+                    row[x] = (byte)(c.B * cb * ca / 65025);
+                    row[x + 1] = (byte)(c.G * cg * ca / 65025);
+                    row[x + 2] = (byte)(c.R * cr * ca / 65025);
+                    row[x + 3] = (byte)(a * ca / 255);
+                }
+                System.Runtime.InteropServices.Marshal.Copy(row, 0, dd.Scan0 + y * dd.Stride, n);
+            }
+        }
+        finally { mask.UnlockBits(sd); dst.UnlockBits(dd); }
+        return dst;
     }
 }

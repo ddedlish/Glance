@@ -230,7 +230,7 @@ internal sealed class GlassLabel : GlassPanel
 internal sealed class GlassScroller : GlassPanel
 {
     public GlassPanel Content { get; } = new();
-    readonly Indicator _bar;
+    readonly Indicator? _bar; // null while the base constructor adds Content (Controls.Add runs a layout pass)
     int _offset;
 
     public GlassScroller()
@@ -255,6 +255,7 @@ internal sealed class GlassScroller : GlassPanel
         int v = Math.Clamp(y, 0, Max);
         _offset = v;
         if (Content.Top != -v) Content.Top = -v;
+        if (_bar is null) return;
         _bar.Visible = Max > 0;
         _bar.Invalidate();
     }
@@ -273,7 +274,7 @@ internal sealed class GlassScroller : GlassPanel
         base.OnLayout(e);
         int w = (int)(12 * DeviceDpi / 96f);
         Content.Width = ClientSize.Width;
-        _bar.SetBounds(ClientSize.Width - w, 0, w, ClientSize.Height);
+        _bar?.SetBounds(ClientSize.Width - w, 0, w, ClientSize.Height);
         ScrollTo(_offset);
     }
 
