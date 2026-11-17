@@ -14,7 +14,7 @@ namespace Glance;
 /// </summary>
 internal sealed class UpdateService
 {
-    public sealed record Release(Version Version, string Tag, string Notes, string AssetUrl, string AssetName, string SumsUrl, long Size)
+    public sealed record Release(Version Version, string Tag, string Notes, string AssetUrl, string AssetName, string SumsUrl, long Size, string? BlocksUrl = null)
     {
         public string VersionText => Fmt.Ver(Version);
     }
@@ -55,7 +55,7 @@ internal sealed class UpdateService
         if (!Version.TryParse(tag.TrimStart('v', 'V'), out var v)) return null;
         if (Normalize(v) <= Normalize(AppInfo.Version)) return null;
 
-        string? asset = null, sums = null;
+        string? asset = null, sums = null, blocks = null;
         long size = 0;
         if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
         foreach (var a in assets.EnumerateArray())
@@ -69,10 +69,11 @@ internal sealed class UpdateService
                 size = a.TryGetProperty("size", out var s) && s.TryGetInt64(out var sz) ? sz : 0;
             }
             else if (string.Equals(name, "SHA256SUMS", StringComparison.OrdinalIgnoreCase)) sums = url;
+            else if (string.Equals(name, AssetName + ".blocks", StringComparison.OrdinalIgnoreCase)) blocks = url;
         }
         if (asset is null || sums is null || size > MaxAssetBytes) return null;
         string notes = root.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() ?? "" : "";
-        return new Release(v, tag, notes, asset, AssetName, sums, size);
+        return new Release(v, tag, notes, asset, AssetName, sums, size, blocks);
     }
 
     static bool IsTrustedUrl(string url) =>
@@ -90,8 +91,16 @@ internal sealed class UpdateService
 
         string expected = await ExpectedHashAsync(r, ct).ConfigureAwait(false);
 
+        bool delta = false;
+        if (r.BlocksUrl is not null)
+        {
+            try { delta = await DeltaDownloadAsync(r, exe, tmp, expected, ct).ConfigureAwait(false); }
+            catch (Exception e) when (e is not OperationCanceledException) { Log.Info($"Delta update failed, full download: {e.Message}"); }
+        }
+
         try
         {
+            if (!delta)
             using (var resp = await Http.GetAsync(r.AssetUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
             {
                 resp.EnsureSuccessStatusCode();
@@ -107,6 +116,7 @@ internal sealed class UpdateService
                     if (total > MaxAssetBytes) throw new InvalidDataException("Слишком большой файл обновления");
                     await dst.WriteAsync(buf.AsMemory(0, read), ct).ConfigureAwait(false);
                 }
+                LastDownloadedBytes = total;
             }
 
             string actual;
@@ -134,6 +144,145 @@ internal sealed class UpdateService
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = dir };
         psi.ArgumentList.Add("--after-update");
         Process.Start(psi);
+    }
+
+    /// <summary>Bytes actually downloaded by the last update (for the "обновлено" message / log).</summary>
+    public static long LastDownloadedBytes { get; private set; }
+
+    /// <summary>
+    /// Delta update (zsync-style): the release publishes rolling + SHA-256 checksums of every 64 KiB block of the
+    /// new file. Blocks already present anywhere in the running executable are copied locally (the bundled .NET
+    /// runtime barely changes between versions); only missing ranges are fetched with parallel HTTP Range
+    /// requests. The result must match the published SHA-256, otherwise the caller falls back to a full download.
+    /// </summary>
+    static async Task<bool> DeltaDownloadAsync(Release r, string exe, string tmp, string expected, CancellationToken ct)
+    {
+        byte[] map = await Http.GetByteArrayAsync(r.BlocksUrl!, ct).ConfigureAwait(false);
+        if (map.Length < 17 || map.Length > 1 << 20 || System.Text.Encoding.ASCII.GetString(map, 0, 5) != "GLBM1") return false;
+        int bs = BitConverter.ToInt32(map, 5);
+        long newLen = BitConverter.ToInt64(map, 9);
+        if (bs < 4096 || bs > 1 << 22 || newLen <= 0 || newLen > MaxAssetBytes) return false;
+        int n = (int)((newLen + bs - 1) / bs);
+        if (map.Length != 17 + n * 12) return false;
+        var weak = new uint[n];
+        var strong = new ulong[n];
+        for (int i = 0; i < n; i++) { weak[i] = BitConverter.ToUInt32(map, 17 + i * 12); strong[i] = BitConverter.ToUInt64(map, 21 + i * 12); }
+
+        byte[] local = await File.ReadAllBytesAsync(exe, ct).ConfigureAwait(false);
+        var src = new long[n];
+        Array.Fill(src, -1);
+        int full = newLen % bs == 0 ? n : n - 1; // the short last block is just downloaded
+        var index = new Dictionary<uint, List<int>>();
+        var filter = new bool[65536];
+        for (int i = 0; i < full; i++)
+        {
+            if (!index.TryGetValue(weak[i], out var l)) index[weak[i]] = l = new List<int>(1);
+            l.Add(i);
+            filter[weak[i] & 0xFFFF] = true;
+        }
+
+        await Task.Run(() =>
+        {
+            int L = bs;
+            if (local.Length < L) return;
+            int a = 0, b = 0;
+            void Init(int k) { a = 0; b = 0; for (int i = 0; i < L; i++) { a += local[k + i]; b += (L - i) * local[k + i]; } a &= 0xFFFF; b &= 0xFFFF; }
+            int k = 0;
+            Init(0);
+            Span<byte> hash = stackalloc byte[32];
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                bool matched = false;
+                if (filter[a])
+                {
+                    uint s = (uint)a | ((uint)b << 16);
+                    if (index.TryGetValue(s, out var cands))
+                    {
+                        SHA256.HashData(local.AsSpan(k, L), hash);
+                        ulong st = BitConverter.ToUInt64(hash);
+                        foreach (var j in cands)
+                            if (strong[j] == st && src[j] < 0) { src[j] = k; matched = true; }
+                    }
+                }
+                if (matched)
+                {
+                    k += L;
+                    if (k + L > local.Length) break;
+                    Init(k);
+                    continue;
+                }
+                if (k + L >= local.Length) break;
+                int xo = local[k], xi = local[k + L];
+                a = (a - xo + xi) & 0xFFFF;
+                b = (b - L * xo + a) & 0xFFFF;
+                k++;
+            }
+        }, ct).ConfigureAwait(false);
+
+        // Missing blocks → merged ranges of at most 2 MiB, fetched 4 at a time.
+        var ranges = new List<(long Start, long End)>();
+        for (int i = 0; i < n; i++)
+        {
+            if (src[i] >= 0) continue;
+            long s0 = (long)i * bs, e0 = Math.Min(newLen, s0 + bs) - 1;
+            if (ranges.Count > 0 && ranges[^1].End + 1 == s0 && e0 - ranges[^1].Start < 2 << 20) ranges[^1] = (ranges[^1].Start, e0);
+            else ranges.Add((s0, e0));
+        }
+        long missing = ranges.Sum(x => x.End - x.Start + 1);
+        if (missing > newLen * 0.9) return false; // nothing to gain — plain download is simpler
+
+        // Resolve the redirect once (signed CDN URL), then range-request it directly.
+        string url = r.AssetUrl;
+        using (var probe = new HttpRequestMessage(HttpMethod.Get, r.AssetUrl))
+        {
+            probe.Headers.Range = new RangeHeaderValue(0, 0);
+            using var pr = await Http.SendAsync(probe, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            if (pr.StatusCode != System.Net.HttpStatusCode.PartialContent) return false;
+            var final = pr.RequestMessage?.RequestUri?.ToString();
+            if (final is not null && IsTrustedUrl(final)) url = final;
+        }
+
+        var parts = new byte[ranges.Count][];
+        using var gate = new SemaphoreSlim(4);
+        await Task.WhenAll(ranges.Select(async (rg, idx) =>
+        {
+            await gate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Range = new RangeHeaderValue(rg.Start, rg.End);
+                using var resp = await Http.SendAsync(req, ct).ConfigureAwait(false);
+                if (resp.StatusCode != System.Net.HttpStatusCode.PartialContent) throw new InvalidDataException("Range not supported");
+                var bytes = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+                if (bytes.Length != rg.End - rg.Start + 1) throw new InvalidDataException("Short range");
+                parts[idx] = bytes;
+            }
+            finally { gate.Release(); }
+        })).ConfigureAwait(false);
+
+        // Assemble.
+        await using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20, true))
+        {
+            int ri = 0;
+            for (int i = 0; i < n; i++)
+            {
+                long s0 = (long)i * bs;
+                int len = (int)(Math.Min(newLen, s0 + bs) - s0);
+                if (src[i] >= 0) { await fs.WriteAsync(local.AsMemory((int)src[i], len), ct).ConfigureAwait(false); continue; }
+                while (ri < ranges.Count && ranges[ri].End < s0) ri++;
+                var rg = ranges[ri];
+                await fs.WriteAsync(parts[ri].AsMemory((int)(s0 - rg.Start), len), ct).ConfigureAwait(false);
+            }
+        }
+
+        string actual;
+        await using (var check = File.OpenRead(tmp))
+            actual = Convert.ToHexString(await SHA256.HashDataAsync(check, ct).ConfigureAwait(false)).ToLowerInvariant();
+        if (actual != expected) { TryDelete(tmp); return false; }
+        LastDownloadedBytes = missing + map.Length;
+        Log.Info($"Delta update: downloaded {Fmt.Size(LastDownloadedBytes)} of {Fmt.Size(newLen)}");
+        return true;
     }
 
     static async Task<string> ExpectedHashAsync(Release r, CancellationToken ct)

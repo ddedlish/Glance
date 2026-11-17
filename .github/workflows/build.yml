@@ -94,10 +94,16 @@ jobs:
     needs: [version, test, windows, linux]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+      - name: Delta-update block maps
+        working-directory: artifacts
+        run: python3 ../repo/build/makeblocks.py Glance-*
       - name: Checksums
         working-directory: artifacts
         run: |
