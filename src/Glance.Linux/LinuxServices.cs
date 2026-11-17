@@ -74,6 +74,7 @@ internal sealed class Notifier
             ["desktop-entry"] = "glance",
         };
         if (level is int l) hints["value"] = Math.Clamp(l, 0, 100); // progress bar on KDE / XFCE / Cinnamon
+        if (urgency == Urgency.Critical) hints["sound-name"] = "battery-caution";
         if (image is not null)
             hints["image-data"] = (image.W, image.H, image.W * 4, true, 8, 4, image.ToRgba());
         try

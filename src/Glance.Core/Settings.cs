@@ -35,6 +35,19 @@ public sealed class AppSettings
     // Critical level: small click-through overlay that never steals focus (works over games)
     public bool CriticalOverlay { get; set; } = true;
     public int CriticalThreshold { get; set; } = 10;
+    public bool CriticalSound { get; set; } = true;
+
+    // Quiet hours: low / full / connect popups stay silent at night (critical still shows)
+    public bool QuietHours { get; set; }
+    public int QuietFrom { get; set; } = 23;
+    public int QuietTo { get; set; } = 8;
+
+    public bool IsQuietNow()
+    {
+        if (!QuietHours) return false;
+        int h = DateTime.Now.Hour;
+        return QuietFrom <= QuietTo ? h >= QuietFrom && h < QuietTo : h >= QuietFrom || h < QuietTo;
+    }
 
     // Earbuds
     public bool BudsDetail { get; set; } = true;
@@ -92,6 +105,8 @@ public sealed class AppSettings
         CriticalThreshold = Math.Clamp(CriticalThreshold, 3, 25);
         if (CriticalThreshold >= LowBatteryThreshold) CriticalThreshold = Math.Max(3, LowBatteryThreshold - 5);
         if (!Enum.IsDefined(IconStyle)) IconStyle = IconStyle.Battery;
+        QuietFrom = Math.Clamp(QuietFrom, 0, 23);
+        QuietTo = Math.Clamp(QuietTo, 0, 23);
         PollSeconds = Math.Clamp(PollSeconds, 15, 600);
     }
 

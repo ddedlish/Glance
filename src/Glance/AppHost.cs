@@ -246,6 +246,7 @@ internal sealed class AppHost : ApplicationContext
         }
         if (!hasData && a.Kind is DeviceKind.Unknown or DeviceKind.Phone) return; // nothing useful to show
         if (_s.RespectFocus && Native.UserIsBusy()) return;
+        if (_s.IsQuietNow()) return;
         _lastPopup[a.Key] = DateTime.Now;
         _toasts.ShowDevice(a, ToastKind.Connected);
     }
@@ -261,7 +262,7 @@ internal sealed class AppHost : ApplicationContext
         {
             if (!charging && lv <= _s.LowBatteryThreshold)
             {
-                if (!_lowAlerted.Contains(a.Key) && !(_s.RespectFocus && Native.UserIsBusy()))
+                if (!_lowAlerted.Contains(a.Key) && !(_s.RespectFocus && Native.UserIsBusy()) && !_s.IsQuietNow())
                 {
                     _lowAlerted.Add(a.Key);
                     _toasts.ShowDevice(a, ToastKind.Low);
@@ -279,7 +280,7 @@ internal sealed class AppHost : ApplicationContext
                 : a.SystemCharging && a.Level >= 100;
             if (full)
             {
-                if (_fullAlerted.Add(a.Key) && !(_s.RespectFocus && Native.UserIsBusy()))
+                if (_fullAlerted.Add(a.Key) && !(_s.RespectFocus && Native.UserIsBusy()) && !_s.IsQuietNow())
                     _toasts.ShowDevice(a, ToastKind.Charged);
             }
             else if (!charging) _fullAlerted.Remove(a.Key);
@@ -310,6 +311,10 @@ internal sealed class AppHost : ApplicationContext
         o.FormClosed += (_, _) => { if (_overlay == o) _overlay = null; };
         _overlay = o;
         o.Present();
+        if (_s.CriticalSound)
+        {
+            try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
+        }
     }
 
     // ───────────────────────────── Tray ─────────────────────────────

@@ -9,6 +9,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Glance", "src\Glance\Glance
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Glance.Linux", "src\Glance.Linux\Glance.Linux.csproj", "{6C1B0D0A-1C61-4E5E-9C38-1B8A1A0C0003}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Glance.Tests", "src\Glance.Tests\Glance.Tests.csproj", "{6C1B0D0A-1C61-4E5E-9C38-1B8A1A0C0004}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

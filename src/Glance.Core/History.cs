@@ -43,6 +43,13 @@ internal sealed class HistoryStore
         ScheduleSave();
     }
 
+    /// <summary>Test hook: inserts a sample with an explicit timestamp.</summary>
+    internal void AddRaw(string key, Sample s)
+    {
+        if (!_data.TryGetValue(key, out var list)) _data[key] = list = new List<Sample>();
+        list.Add(s);
+    }
+
     public void Remove(string key)
     {
         if (_data.Remove(key)) ScheduleSave();

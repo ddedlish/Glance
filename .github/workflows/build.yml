@@ -28,6 +28,16 @@ jobs:
           else v=$(grep -oP '(?<=<Version>)[0-9]+\.[0-9]+\.[0-9]+(?=</Version>)' src/Glance/Glance.csproj | head -1); fi
           echo "v=${v:-2.0.0}" >> "$GITHUB_OUTPUT"
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Unit tests
+        run: dotnet test src/Glance.Tests/Glance.Tests.csproj -c Release --logger "console;verbosity=normal"
+
   windows:
     needs: version
     runs-on: windows-latest
@@ -81,7 +91,7 @@ jobs:
           path: dist/*
 
   release:
-    needs: [version, windows, linux]
+    needs: [version, test, windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

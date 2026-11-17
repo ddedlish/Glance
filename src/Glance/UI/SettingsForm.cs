@@ -138,7 +138,15 @@ internal sealed class SettingsForm : Form
         var crit = new Stepper(sc, _s.CriticalThreshold, 3, 20, 1, v => $"{v}%");
         crit.ValueChanged += () => { _s.CriticalThreshold = crit.Value; _s.NotifyChanged(); };
         Row("Порог критического заряда", "", crit);
+        Row("Звук при критическом заряде", "Короткий системный сигнал вместе с баннером", Toggle(_s.CriticalSound, v => _s.CriticalSound = v));
         Row("Полностью заряжено", "Сообщить, когда устройство на зарядке дошло до 100%", Toggle(_s.FullChargeAlert, v => _s.FullChargeAlert = v));
+        var qFrom = new Stepper(sc, _s.QuietFrom, 0, 23, 1, v => $"с {v:00}:00");
+        qFrom.ValueChanged += () => { _s.QuietFrom = qFrom.Value; _s.NotifyChanged(); };
+        var qTo = new Stepper(sc, _s.QuietTo, 0, 23, 1, v => $"до {v:00}:00");
+        qTo.ValueChanged += () => { _s.QuietTo = qTo.Value; _s.NotifyChanged(); };
+        Row("Тихие часы", "Ночью молчат окна о подключении, низком и полном заряде. Критический — нет", Toggle(_s.QuietHours, v => _s.QuietHours = v));
+        Row("Начало тихих часов", "", qFrom);
+        Row("Конец тихих часов", "", qTo);
         Row("Не беспокоить", "Обычные окна молчат в играх и при «Не беспокоить» (критический баннер — нет)", Toggle(_s.RespectFocus, v => _s.RespectFocus = v));
 
         // ── Наушники ──

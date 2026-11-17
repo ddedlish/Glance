@@ -75,7 +75,7 @@ internal sealed class LinuxHost
 
     void OnConnected(Accessory a, bool initial)
     {
-        if (initial || !_s.ShowConnectPopup) return;
+        if (initial || !_s.ShowConnectPopup || _s.IsQuietNow()) return;
         if (_lastPopup.TryGetValue(a.Key, out var t) && (DateTime.Now - t).TotalSeconds < 90) return;
         _lastPopup[a.Key] = DateTime.Now;
         // Give UPower a moment to report the level.
@@ -132,7 +132,7 @@ internal sealed class LinuxHost
         {
             if (!ch && lv <= _s.LowBatteryThreshold)
             {
-                if (_lowAlerted.Add(a.Key))
+                if (!_s.IsQuietNow() && _lowAlerted.Add(a.Key))
                     _ = _notify.ShowAsync(a.Key, $"Низкий заряд · {lv}%", a.DisplayName + EstimateText(a), Notifier.Urgency.Normal, Big(a), lv, 10000);
             }
             else if (ch || lv >= _s.LowBatteryThreshold + 5) _lowAlerted.Remove(a.Key);
@@ -140,7 +140,7 @@ internal sealed class LinuxHost
 
         if (_s.FullChargeAlert)
         {
-            if (ch && lv >= 100) { if (_fullAlerted.Add(a.Key)) _ = _notify.ShowAsync(a.Key, "Полностью заряжено", a.DisplayName, Notifier.Urgency.Low, Big(a), 100); }
+            if (ch && lv >= 100) { if (!_s.IsQuietNow() && _fullAlerted.Add(a.Key)) _ = _notify.ShowAsync(a.Key, "Полностью заряжено", a.DisplayName, Notifier.Urgency.Low, Big(a), 100); }
             else if (!ch) _fullAlerted.Remove(a.Key);
         }
     }
@@ -210,6 +210,7 @@ internal sealed class LinuxHost
         Check("Предупреждать о низком заряде", _s.LowBatteryAlerts, v => _s.LowBatteryAlerts = v);
         Check("Критический заряд (поверх всего)", _s.CriticalOverlay, v => _s.CriticalOverlay = v);
         Check("Сообщать о полной зарядке", _s.FullChargeAlert, v => _s.FullChargeAlert = v);
+        Check($"Тихие часы ({_s.QuietFrom:00}:00–{_s.QuietTo:00}:00)", _s.QuietHours, v => _s.QuietHours = v);
         Check("Запускать при входе в систему", LinuxInstaller.AutostartEnabled, v => LinuxInstaller.SetAutostart(v));
         if (AppInfo.UpdatesConfigured) Check("Проверять обновления", _s.CheckUpdates, v => _s.CheckUpdates = v);
         items.Add(new("", Separator: true));
