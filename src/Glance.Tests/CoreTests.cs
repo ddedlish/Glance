@@ -191,3 +191,32 @@ public class FormatTests
     [Fact]
     public void Percent() { Assert.Equal("42%", Fmt.Percent(42)); Assert.Equal("—", Fmt.Percent(null)); }
 }
+
+public class VendorBatteryTests
+{
+    [Theory]
+    [InlineData(new byte[] { 0x03, 0xE5, 0x40, 0x01, 0x57 }, 87, false)]
+    [InlineData(new byte[] { 0x03, 0x55, 0x40, 0x03, 0x64 }, 100, true)]
+    [InlineData(new byte[] { 0x03, 0x24, 0x41, 0x02, 0x0A, 0x00, 0x00 }, 10, false)]
+    public void Xenta_battery_frames(byte[] frame, int level, bool charging)
+    {
+        var r = VendorBattery.ParseXenta(frame);
+        Assert.NotNull(r);
+        Assert.Equal(level, r!.Value.Level);
+        Assert.Equal(charging, r.Value.Charging);
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0x03, 0xE5, 0x01, 0x00, 0x00 })] // link blink
+    [InlineData(new byte[] { 0x02, 0xE5, 0x40, 0x01, 0x50 })] // other report
+    [InlineData(new byte[] { 0x03, 0xE5, 0x40, 0x01, 0xC8 })] // >100
+    [InlineData(new byte[] { 0x03, 0xE5, 0x40 })]
+    public void Xenta_rejects_noise(byte[] frame) => Assert.Null(VendorBattery.ParseXenta(frame));
+
+    [Fact]
+    public void Attack_Shark_is_a_mouse()
+    {
+        var p = Profiles.Match("ATTACK SHARK G3 PRO", DeviceKind.Unknown);
+        Assert.Equal(DeviceKind.Mouse, p.Kind);
+    }
+}

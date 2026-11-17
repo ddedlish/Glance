@@ -281,6 +281,13 @@ internal sealed class DeviceRegistry
                 if (a.Profile.Kind == DeviceKind.Unknown) a.Profile = a.Profile with { Kind = r.Kind };
                 _map[r.Id] = a;
             }
+            if (a.Name != r.Name && r.Name.Length > 0)
+            {
+                a.Name = r.Name; // e.g. «2.4G Wireless Device» → «Attack Shark» once the vendor battery is recognised
+                a.Profile = Profiles.Match(r.Name, r.Kind) with { Buds = BudsSource.None };
+                if (a.Profile.Kind == DeviceKind.Unknown) a.Profile = a.Profile with { Kind = r.Kind };
+                ListChanged?.Invoke();
+            }
             seen.Add(r.Id);
             _rxMisses.Remove(r.Id);
             if (!a.Connected)

@@ -409,6 +409,11 @@ internal static class Profiles
             new(@"Mouse|Arc|Mice|Precision", DeviceKind.Mouse),
             new(@"Speaker", DeviceKind.Speaker),
         }, StripPrefix: "Microsoft"),
+        new("Attack Shark", @"Attack\s?Shark|^AS[-\s]?(G3|X3|X11|R1|V6|X6|X8)", new Rule[]
+        {
+            new(@"K\d{2}|Keyboard", DeviceKind.Keyboard),
+            new(@".", DeviceKind.Mouse),
+        }, StripPrefix: "Attack Shark"),
         new("Razer", @"Razer|Hammerhead|Barracuda|Kraken|BlackShark|Orochi|Basilisk|DeathAdder|Viper|Naga|Pro\s?Click|BlackWidow|Wolverine|Kishi|Raiju|Atrox|Huntsman|Cobra", new Rule[]
         {
             new(@"Hammerhead", DeviceKind.Earbuds, true),

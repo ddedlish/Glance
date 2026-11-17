@@ -122,6 +122,8 @@ internal static class HidReceivers
             else if (caps.UsagePage == 0x0B && g.Kind == DeviceKind.Unknown) g.Kind = DeviceKind.Headset; // telephony = headset
 
             if (g.Level is null) TryBattery(path, pp, caps, g);
+            if (g.Level is null && attr.VendorID == XentaVid && caps.UsagePage >= 0xFF00 && caps.InputReportByteLength >= 5)
+                TryXenta(path, caps.InputReportByteLength, key, product, g);
         }
         finally { HidD_FreePreparsedData(pp); }
     }
@@ -162,6 +164,66 @@ internal static class HidReceivers
                 return;
             }
         }
+    }
+
+    // ───────────── Vendor protocols ─────────────
+
+    /// <summary>Xenta chipset (VID 1D57): Attack Shark G3 / G3 Pro, X11, R1, X3, V6… — receiver 1D57:FA60/FA65, cable FA55/FA61/2155/2224.</summary>
+    const ushort XentaVid = 0x1D57;
+    static readonly Regex GenericReceiverName = new(@"^(LXDDZ\s+)?2[.,]4\s?G(\s+Wireless)?(\s+Device|\s+Receiver|\s+Mouse)?$|^USB DEVICE$|^$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    static readonly Dictionary<string, (int Level, bool Charging, DateTime At)> LastVendor = new();
+    static readonly object VendorLock = new();
+
+    /// <summary>
+    /// These mice report no standard battery field. Their receiver pushes a vendor input report (id 3) every ~2 s:
+    /// <c>03 MM 4x ST NN</c> — MM model byte, ST 01 on battery / 02 idle / 03 charging, NN level 0–100 %.
+    /// We only listen (read-only handle, nothing is ever written to the mouse) for up to ~4.5 s and accept a frame
+    /// only after seeing it twice in the exact format. While the mouse sleeps the last level is kept for 30 min.
+    /// </summary>
+    static void TryXenta(string path, int reportLen, string key, string product, Group g)
+    {
+        const uint FILE_FLAG_OVERLAPPED = 0x40000000;
+        (int Level, bool Charging)? found = null;
+        try
+        {
+            using var h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
+            if (!h.IsInvalid)
+            {
+                using var fs = new FileStream(h, FileAccess.Read, 0, isAsync: true);
+                var buf = new byte[Math.Max(reportLen, 8)];
+                var deadline = DateTime.UtcNow.AddMilliseconds(4500);
+                (int, bool)? prev = null;
+                for (int i = 0; i < 12 && found is null; i++)
+                {
+                    var left = deadline - DateTime.UtcNow;
+                    if (left <= TimeSpan.Zero) break;
+                    using var cts = new CancellationTokenSource(left);
+                    int n;
+                    try { n = fs.ReadAsync(buf, 0, reportLen, cts.Token).GetAwaiter().GetResult(); }
+                    catch (OperationCanceledException) { break; }
+                    if (n < 5) continue;
+                    var frame = VendorBattery.ParseXenta(buf.AsSpan(0, n));
+                    if (frame is null) continue;
+                    if (prev == frame) found = frame; // sent twice in a row: confirmed
+                    prev = frame;
+                }
+                // A single valid frame is still good when the window closed before the repeat.
+                found ??= prev;
+            }
+        }
+        catch (Exception e) { Log.Info($"Xenta read: {e.Message}"); }
+
+        lock (VendorLock)
+        {
+            if (found is (int lvl, bool ch)) LastVendor[key] = (lvl, ch, DateTime.UtcNow);
+            else if (LastVendor.TryGetValue(key, out var last) && DateTime.UtcNow - last.At < TimeSpan.FromMinutes(30)) found = (last.Level, last.Charging);
+        }
+        if (found is not (int level, bool charging)) return;
+        g.Level = level;
+        g.Charging = charging;
+        g.Wireless = true;
+        if (g.Kind == DeviceKind.Unknown) g.Kind = DeviceKind.Mouse;
+        if (GenericReceiverName.IsMatch(product.Trim()) && (g.Name.Length == 0 || GenericReceiverName.IsMatch(g.Name))) g.Name = "Attack Shark";
     }
 
     static string? DevicePath(IntPtr set, ref SP_DEVICE_INTERFACE_DATA data)
