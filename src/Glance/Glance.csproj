@@ -42,9 +42,9 @@
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
-    <!-- 3.0: no bundle compression (the runtime is memory-mapped instead of unpacked on every start: faster launch,
-         less RAM) and ReadyToRun for Glance itself (no JIT warm-up for the UI). Delta updates keep downloads small. -->
-    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <!-- Compressed bundle keeps the download ~70 MB (uncompressed would be ~230 MB). ReadyToRun precompiles Glance
+         itself, so the UI starts without JIT warm-up. -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
 
