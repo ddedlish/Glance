@@ -1,0 +1,110 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      v: ${{ steps.v.outputs.v }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        # Version comes from the tag (v2.0.1) or, on main, from <Version> in src/Glance/Glance.csproj
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"
+          else v=$(grep -oP '(?<=<Version>)[0-9]+\.[0-9]+\.[0-9]+(?=</Version>)' src/Glance/Glance.csproj | head -1); fi
+          echo "v=${v:-2.0.0}" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        rid: [win-x64, win-x86]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish ${{ matrix.rid }} (self-contained single file = installer + app)
+        run: >
+          dotnet publish src/Glance/Glance.csproj -c Release -r ${{ matrix.rid }}
+          -p:Version=${{ needs.version.outputs.v }} -p:GlanceUpdateRepo=${{ github.repository }} -o out
+      - name: Package
+        shell: pwsh
+        run: |
+          $extra = Get-ChildItem out -File | Where-Object { $_.Name -ne 'Glance.exe' }
+          if ($extra) { Write-Host "::warning::Extra files next to Glance.exe: $($extra.Name -join ', ')" }
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item out/Glance.exe "dist/Glance-${{ matrix.rid }}.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Glance-${{ matrix.rid }}
+          path: dist/*
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rid: [linux-x64, linux-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish ${{ matrix.rid }} (self-contained single file = installer + app)
+        run: >
+          dotnet publish src/Glance.Linux/Glance.Linux.csproj -c Release -r ${{ matrix.rid }}
+          -p:Version=${{ needs.version.outputs.v }} -p:GlanceUpdateRepo=${{ github.repository }} -o out
+      - name: Package
+        run: |
+          mkdir dist
+          cp out/Glance "dist/Glance-${{ matrix.rid }}"
+          chmod +x "dist/Glance-${{ matrix.rid }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Glance-${{ matrix.rid }}
+          path: dist/*
+
+  release:
+    needs: [version, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        working-directory: artifacts
+        run: |
+          sha256sum Glance-* > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Glance-all
+          path: artifacts/*
+      # Every push to main publishes/refreshes release v<Version> (bump <Version> in Glance.csproj for a new release).
+      - name: GitHub Release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.v }}
+          name: Glance ${{ needs.version.outputs.v }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          make_latest: true
+          files: artifacts/*

@@ -1,0 +1,22 @@
+name: 🎧 Добавить устройство
+description: Модель определяется неверно или её нет в базе
+labels: [device]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Название устройства в Bluetooth
+      placeholder: "Galaxy Buds3 Pro (A1B2)"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Что это
+      options: [TWS-наушники с кейсом, Накладные / полноразмерные, Шейные, Гарнитура, Колонка, Мышь, Клавиатура, Геймпад, Стилус, Часы / браслет, Другое]
+    validations:
+      required: true
+  - type: textarea
+    id: shown
+    attributes:
+      label: Как Glance показывает сейчас

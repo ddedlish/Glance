@@ -1,0 +1,616 @@
+namespace Glance;
+
+/// <summary>
+/// Composition root: wires providers → registry → tray / popups / alerts.
+/// Everything here runs on the UI thread.
+/// </summary>
+internal sealed class AppHost : ApplicationContext
+{
+    readonly AppSettings _s;
+    readonly HistoryStore _h;
+    readonly DeviceRegistry _r;
+    readonly TrayHost _tray;
+    readonly BluetoothWatcher _bt = new();
+    readonly BudsScanner _scanner = new();
+    readonly BudsMatcher _matcher = new();
+    readonly GamepadProvider? _pads;
+    readonly BatteryPoller _poller;
+    readonly ToastManager _toasts = new();
+    readonly UpdateService _upd = new();
+
+    readonly Dictionary<string, GattBattery> _gatt = new(StringComparer.Ordinal);
+    readonly Dictionary<string, TrayIcon> _icons = new(StringComparer.Ordinal);
+    readonly Dictionary<string, string> _iconSig = new(StringComparer.Ordinal);
+    readonly Dictionary<string, DateTime> _lastPopup = new(StringComparer.Ordinal);
+    readonly HashSet<string> _lowAlerted = new(StringComparer.Ordinal), _fullAlerted = new(StringComparer.Ordinal);
+    readonly Dictionary<string, int> _criticalShownAt = new(StringComparer.Ordinal);
+    CriticalOverlay? _overlay;
+
+    TrayIcon? _appIcon;
+    FlyoutForm? _flyout;
+    HoverCard? _hover;
+    SettingsForm? _settingsForm;
+    long _flyoutClosedAt;
+    bool _exiting, _installing;
+    UpdateService.Release? _pending;
+    EventWaitHandle? _showEvent, _exitEvent;
+    RegisteredWaitHandle? _showWait, _exitWait;
+    System.Threading.Timer? _updateTimer;
+
+    const string SummaryKey = "__summary", AppKey = "__app";
+
+    public AppHost(bool autostart, bool afterUpdate)
+    {
+        _s = AppSettings.Load();
+        _h = new HistoryStore();
+        _r = new DeviceRegistry(_s, _h);
+        Svc.Init(_s, _h, _r);
+        _tray = new TrayHost();
+
+        try { _pads = new GamepadProvider(); }
+        catch (Exception e) { Log.Info($"Gamepad API unavailable: {e.Message}"); }
+        _poller = new BatteryPoller(_pads);
+
+        Wire();
+        _r.LoadKnown();
+        SyncTray();
+        _tray.SetHotkey(_s.Hotkey);
+        Autostart.Repair();
+        Installer.RefreshRegistration();
+
+        try
+        {
+            _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Program.ShowEventName);
+            _showWait = ThreadPool.RegisterWaitForSingleObject(_showEvent, (_, _) => Ui.Post(() => OpenFlyout(null)), null, Timeout.Infinite, false);
+        }
+        catch (Exception e) { Log.Error("Show event", e); }
+        try
+        {
+            // The installer / uninstaller asks us to quit before replacing or removing the exe.
+            _exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Installer.ExitEventName);
+            _exitWait = ThreadPool.RegisterWaitForSingleObject(_exitEvent, (_, _) => Ui.Post(ExitApp), null, Timeout.Infinite, true);
+        }
+        catch (Exception e) { Log.Error("Exit event", e); }
+
+        // On autostart give the system a few seconds to settle (less contention at logon).
+        Ui.Delay(autostart ? 5000 : 10, StartMonitoring);
+        if (afterUpdate)
+            Ui.Delay(1500, () => _toasts.ShowMessage($"Glance обновлён до {AppInfo.VersionText}", "Всё работает как прежде — настройки и история сохранены.", Glyphs.Check));
+
+        ScheduleUpdateChecks();
+        Ui.Delay(30_000, TrimMemory);
+        Log.Info($"Started {AppInfo.VersionText}");
+    }
+
+    void Wire()
+    {
+        _bt.Endpoint += (ep, initial) => _r.OnEndpoint(ep, initial);
+        _bt.EndpointRemoved += id => _r.OnEndpointRemoved(id);
+        _bt.EnumerationCompleted += () => { _r.PruneUnpaired(); RefreshPolling(); };
+
+        _r.DeviceConnected += OnConnected;
+        _r.DeviceDisconnected += OnDisconnected;
+        _r.Changed += OnChanged;
+        _r.ListChanged += () => { SyncTray(); _flyout?.Rebuild(); };
+
+        _poller.Result += (pnp, pads) =>
+        {
+            _r.ApplyPnp(pnp);
+            _r.ApplyGamepads(pads);
+            foreach (var g in _gatt.Values) if (g.NeedsPolling) _ = g.ReadAsync();
+        };
+        if (_pads is not null) _pads.Changed += () => { _poller.ReadSoon(300); Ui.Post(RefreshPolling); };
+
+        _scanner.Seen += OnAdvert;
+
+        _tray.ThemeChanged += Theme.Refresh;
+        Theme.Changed += () =>
+        {
+            _iconSig.Clear();
+            SyncTray();
+            _toasts.ApplyTheme();
+            _flyout?.ApplyTheme();
+        };
+        _tray.TaskbarRecreated += () => { _iconSig.Clear(); SyncTray(); };
+        _tray.DisplayChanged += () => { _iconSig.Clear(); SyncTray(); };
+        _tray.Resumed += () => Ui.Delay(4000, () => { _bt.Start(); _poller.ReadSoon(500, 5000); });
+        _tray.HotkeyPressed += () => { if (_flyout is not null) _flyout.CloseAnimated(); else OpenFlyout(null); };
+
+        _toasts.DeviceClicked = _ => OpenFlyout(null);
+        _s.Changed += OnSettingsChanged;
+    }
+
+    void StartMonitoring()
+    {
+        _bt.Start();
+        RefreshPolling();
+        _poller.ReadSoon(1500);
+    }
+
+    void RefreshPolling()
+    {
+        bool any = _r.ConnectedDevices.Any() || (_pads?.Any ?? false);
+        _poller.SetEnabled(any, _s.PollSeconds);
+    }
+
+    // ───────────────────────────── Device lifecycle ─────────────────────────────
+
+    void OnConnected(Accessory a, bool initial)
+    {
+        RefreshPolling();
+        _poller.ReadSoon(300, 3000, 10_000);
+        _ = ResolveAndStartAsync(a);
+        UpdateBudsTargets(a);
+        if (!initial && _s.ShowConnectPopup) SchedulePopup(a);
+        SyncTray();
+    }
+
+    void OnDisconnected(Accessory a)
+    {
+        if (_gatt.Remove(a.Key, out var g)) g.Dispose();
+        _matcher.Forget(a.Key);
+        UpdateBudsTargets(null);
+        RefreshPolling();
+        SyncTray();
+        _flyout?.Rebuild();
+        _toasts.Refresh(a);
+    }
+
+    async Task ResolveAndStartAsync(Accessory a)
+    {
+        try
+        {
+            if (a.KindHint == DeviceKind.Unknown)
+            {
+                var k = await KindResolver.ResolveAsync(a);
+                if (k != DeviceKind.Unknown && a.Connected)
+                {
+                    _r.SetKindHint(a, k);
+                    UpdateBudsTargets(a);
+                }
+            }
+            if (a.LeAepId is string id && a.Connected && !_gatt.ContainsKey(a.Key))
+            {
+                var g = new GattBattery(id);
+                _gatt[a.Key] = g;
+                g.Levels += lv => _r.ApplyGatt(a, lv);
+                await g.StartAsync();
+            }
+        }
+        catch (Exception e) { Log.Error("Resolve", e); }
+    }
+
+    void UpdateBudsTargets(Accessory? justConnected)
+    {
+        bool apple = false, fp = false;
+        if (_s.BudsDetail)
+        {
+            foreach (var a in _r.ConnectedDevices)
+            {
+                if (a.Profile.Buds == BudsSource.AppleContinuity) apple = true;
+                else if (a.Profile.Buds == BudsSource.FastPair) fp = true;
+            }
+        }
+        _scanner.SetTargets(apple, fp);
+
+        if (justConnected is { Connected: true } j && _s.BudsDetail && j.Profile.Buds != BudsSource.None && !j.HasParts)
+        {
+            _scanner.Kick();
+            _r.SetPending(j, true);
+            var since = j.ConnectedAt;
+            Ui.Delay(30_000, () => { if (j.ConnectedAt == since && j.BudsPending) _r.SetPending(j, false); });
+        }
+    }
+
+    void OnAdvert(BudsAdvert adv)
+    {
+        var targets = _r.ConnectedDevices.Where(a => a.Profile.Buds != BudsSource.None).ToList();
+        if (targets.Count == 0) return;
+        foreach (var (t, x) in _matcher.Match(adv, targets, _s.RssiThreshold))
+            _r.ApplyBuds(t, x);
+        if (targets.All(t => t.HasParts && (DateTime.UtcNow - t.PartsAtUtc).TotalSeconds < 10))
+            _scanner.Satisfied();
+    }
+
+    void OnChanged(Accessory a)
+    {
+        if (a.Connected && a.Level is int lv)
+        {
+            _h.Add(a.Key, lv, a.Charging, a.SessionStartPending);
+            a.SessionStartPending = false;
+        }
+        CheckAlerts(a);
+        SyncTray();
+        _flyout?.Invalidate();
+        _hover?.RefreshDevice(a);
+        _toasts.Refresh(a);
+    }
+
+    // ───────────────────────────── Popups & alerts ─────────────────────────────
+
+    void SchedulePopup(Accessory a)
+    {
+        if (_lastPopup.TryGetValue(a.Key, out var last) && (DateTime.Now - last).TotalSeconds < 90) return; // flapping connection
+        var since = a.ConnectedAt;
+        Ui.Delay(1200, () => TryPopup(a, since, 0));
+    }
+
+    void TryPopup(Accessory a, DateTime since, int attempt)
+    {
+        if (!a.Connected || a.ConnectedAt != since) return;
+        bool hasData = a.Level is not null;
+        if (!hasData && attempt < 3)
+        {
+            Ui.Delay(1200, () => TryPopup(a, since, attempt + 1));
+            return;
+        }
+        if (!hasData && a.Kind is DeviceKind.Unknown or DeviceKind.Phone) return; // nothing useful to show
+        if (_s.RespectFocus && Native.UserIsBusy()) return;
+        _lastPopup[a.Key] = DateTime.Now;
+        _toasts.ShowDevice(a, ToastKind.Connected);
+    }
+
+    void CheckAlerts(Accessory a)
+    {
+        if (!a.Connected) return;
+        int? weakest = a.WeakestLevel;
+        if (weakest is not int lv) return;
+        bool charging = a.Charging;
+
+        if (_s.LowBatteryAlerts)
+        {
+            if (!charging && lv <= _s.LowBatteryThreshold)
+            {
+                if (!_lowAlerted.Contains(a.Key) && !(_s.RespectFocus && Native.UserIsBusy()))
+                {
+                    _lowAlerted.Add(a.Key);
+                    _toasts.ShowDevice(a, ToastKind.Low);
+                }
+            }
+            else if (charging || lv >= _s.LowBatteryThreshold + 5) _lowAlerted.Remove(a.Key);
+        }
+
+        CheckCritical(a, lv, charging);
+
+        if (_s.FullChargeAlert)
+        {
+            bool full = a.HasParts && !a.IsSplitDevice
+                ? a.Left is { Level: >= 100, Charging: true } && a.Right is { Level: >= 100, Charging: true }
+                : a.SystemCharging && a.Level >= 100;
+            if (full)
+            {
+                if (_fullAlerted.Add(a.Key) && !(_s.RespectFocus && Native.UserIsBusy()))
+                    _toasts.ShowDevice(a, ToastKind.Charged);
+            }
+            else if (!charging) _fullAlerted.Remove(a.Key);
+        }
+    }
+
+    /// <summary>
+    /// Critical level: click-through banner on top of games/fullscreen video, never takes focus.
+    /// Shown at the threshold and again for every further 5 % drop; reset by charging.
+    /// </summary>
+    void CheckCritical(Accessory a, int level, bool charging)
+    {
+        if (charging || level > _s.CriticalThreshold + 3)
+        {
+            _criticalShownAt.Remove(a.Key);
+            return;
+        }
+        if (!_s.CriticalOverlay || level > _s.CriticalThreshold) return;
+        if (_criticalShownAt.TryGetValue(a.Key, out var shown) && level > shown - 5) return;
+        _criticalShownAt[a.Key] = level;
+        ShowCritical(a);
+    }
+
+    void ShowCritical(Accessory a)
+    {
+        _overlay?.FadeOut();
+        var o = new CriticalOverlay(a);
+        o.FormClosed += (_, _) => { if (_overlay == o) _overlay = null; };
+        _overlay = o;
+        o.Present();
+    }
+
+    // ───────────────────────────── Tray ─────────────────────────────
+
+    void SyncTray()
+    {
+        if (_exiting) return;
+        var visible = _r.ConnectedDevices
+            .Where(a => (a.Level is not null || a.HasParts) && !_s.For(a.Key).HideInTray)
+            .OrderBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        var want = new List<(string Key, Accessory A)>();
+        if (_s.TrayMode == TrayMode.PerDevice) want.AddRange(visible.Select(a => (a.Key, a)));
+        else if (visible.Count > 0) want.Add((SummaryKey, visible.MinBy(a => a.WeakestLevel ?? 101)!));
+
+        foreach (var key in _icons.Keys.Where(k => want.All(w => w.Key != k)).ToList())
+        {
+            _icons[key].Dispose();
+            _icons.Remove(key);
+            _iconSig.Remove(key);
+        }
+
+        bool dark = Theme.Current.TaskbarDark;
+        int size = IconRenderer.Size;
+        foreach (var (key, a) in want)
+        {
+            if (!_icons.TryGetValue(key, out var icon))
+            {
+                icon = _tray.CreateIcon(key);
+                WireIcon(icon);
+                _icons[key] = icon;
+            }
+            string tip = key == SummaryKey ? string.Join("\n", visible.Take(4).Select(Svc.Tooltip)) : Svc.Tooltip(a);
+            string sig = $"{a.WeakestLevel}|{a.Charging}|{tip}|{_s.IconStyle}|{_s.RichHover}|{_s.LowBatteryThreshold}|{dark}|{size}";
+            if (_iconSig.TryGetValue(key, out var old) && old == sig) continue;
+            icon.Set(IconRenderer.Device(a.WeakestLevel, a.Charging, _s.IconStyle, _s.LowBatteryThreshold), tip, _s.RichHover);
+            _iconSig[key] = sig;
+        }
+
+        if (want.Count == 0)
+        {
+            if (_appIcon is null)
+            {
+                _appIcon = _tray.CreateIcon(AppKey);
+                WireIcon(_appIcon);
+                _iconSig.Remove(AppKey);
+            }
+            string sig = $"app|{dark}|{size}|{_s.RichHover}";
+            if (!_iconSig.TryGetValue(AppKey, out var old) || old != sig)
+            {
+                _appIcon.Set(IconRenderer.App(), "Glance — нет подключённых аксессуаров", _s.RichHover);
+                _iconSig[AppKey] = sig;
+            }
+        }
+        else if (_appIcon is not null)
+        {
+            _appIcon.Dispose();
+            _appIcon = null;
+            _iconSig.Remove(AppKey);
+        }
+    }
+
+    void WireIcon(TrayIcon icon)
+    {
+        icon.Clicked += _ =>
+        {
+            if (_flyout is not null) { _flyout.CloseAnimated(); return; }
+            OpenFlyout(icon);
+        };
+        icon.MenuRequested += pt => ShowTrayMenu(icon, pt);
+        icon.HoverOpened += () => ShowHover(icon);
+        icon.HoverClosed += HideHover;
+    }
+
+    void ShowHover(TrayIcon icon)
+    {
+        if (!_s.RichHover || _flyout is not null) return;
+        HideHover();
+        var list = icon.Key is SummaryKey or AppKey
+            ? _r.ConnectedDevices.Where(a => a.Level is not null || a.HasParts).OrderBy(a => a.DisplayName).Take(4).ToList()
+            : _r.Get(icon.Key) is Accessory a ? new List<Accessory> { a } : new List<Accessory>();
+        _hover = new HoverCard(list, icon.GetRect());
+        var h = _hover;
+        h.FormClosed += (_, _) => { if (_hover == h) _hover = null; };
+        h.ShowNear();
+        if (list.Any(x => x.Profile.Buds != BudsSource.None)) _scanner.Kick();
+    }
+
+    void HideHover()
+    {
+        var h = _hover;
+        _hover = null;
+        if (h is { IsDisposed: false }) h.Close();
+    }
+
+    void OpenFlyout(TrayIcon? anchor)
+    {
+        if (_flyout is not null) { _flyout.Activate(); return; }
+        if (Environment.TickCount64 - _flyoutClosedAt < 300) return; // the click that just closed it
+        HideHover();
+        var f = new FlyoutForm { PendingUpdate = _pending?.VersionText };
+        f.SettingsRequested += OpenSettings;
+        f.UpdateRequested += () => { if (_pending is not null) _ = InstallUpdateAsync(_pending); };
+        f.DeviceMenuRequested += (a, pt) => ShowDeviceMenu(a, pt, f);
+        f.FormClosed += (_, _) =>
+        {
+            if (_flyout == f) _flyout = null;
+            _flyoutClosedAt = Environment.TickCount64;
+            _scanner.SetLive(false);
+            Ui.Delay(10_000, TrimMemory);
+        };
+        _flyout = f;
+        _scanner.SetLive(true);
+        f.ShowNear((anchor ?? _icons.Values.FirstOrDefault() ?? _appIcon)?.GetRect());
+    }
+
+    void ShowTrayMenu(TrayIcon icon, Point pt)
+    {
+        HideHover();
+        var m = Menus.Create();
+        if (_r.Get(icon.Key) is Accessory a)
+        {
+            m.Header($"{a.DisplayName} — {Fmt.Percent(a.Level)}");
+            m.Item("Переименовать…", () => Rename(a));
+            m.Item("Скрыть из трея", () => { _s.For(a.Key).HideInTray = true; _s.Save(); SyncTray(); });
+            m.Separator();
+        }
+        m.Item("Открыть панель", () => OpenFlyout(icon));
+        if (_pending is not null) m.Item($"Установить версию {_pending.VersionText}", () => _ = InstallUpdateAsync(_pending));
+        var hidden = _r.All.Where(x => _s.For(x.Key).HideInTray && x.Connected).ToList();
+        foreach (var x in hidden) m.Item($"Показать в трее: {x.DisplayName}", () => { _s.For(x.Key).HideInTray = false; _s.Save(); SyncTray(); });
+        m.Item("Параметры Bluetooth", FlyoutForm.OpenBluetoothSettings);
+        m.Item("Настройки Glance", OpenSettings);
+        m.Separator();
+        m.Item("Выход", ExitApp);
+        Native.SetForegroundWindow(_tray.Handle);
+        m.Show(pt, ToolStripDropDownDirection.AboveLeft);
+    }
+
+    void ShowDeviceMenu(Accessory a, Point screenPt, FlyoutForm owner)
+    {
+        var m = Menus.Create();
+        var ds = _s.For(a.Key);
+        m.Item("Переименовать…", () => Rename(a));
+        if (ds.HideInTray) m.Item("Показывать в трее", () => { ds.HideInTray = false; _s.Save(); SyncTray(); });
+        else m.Item("Скрыть из трея", () => { ds.HideInTray = true; _s.Save(); SyncTray(); });
+        if (!a.Connected) m.Item("Убрать из списка", () => _r.Forget(a));
+        m.Separator();
+        m.Item("Параметры Bluetooth", FlyoutForm.OpenBluetoothSettings);
+        owner.MenuOpen = true;
+        m.Closed += (_, _) =>
+        {
+            owner.MenuOpen = false;
+            Ui.Delay(50, () => { if (!owner.IsDisposed && Form.ActiveForm != owner) owner.CloseAnimated(); });
+        };
+        m.Show(screenPt);
+    }
+
+    void Rename(Accessory a)
+    {
+        _flyout?.CloseAnimated();
+        var name = InputForm.Ask("Переименовать", $"Имя для «{a.Name}»", a.DisplayName);
+        if (name is null) return;
+        _s.For(a.Key).CustomName = name.Length == 0 || name == a.Name ? null : name;
+        _s.Save();
+        _r.Touch(a);
+    }
+
+    void OpenSettings()
+    {
+        if (_settingsForm is { IsDisposed: false }) { _settingsForm.Activate(); return; }
+        var f = new SettingsForm(_s);
+        f.CheckUpdatesRequested += () => CheckUpdatesAsync(manual: true);
+        f.FormClosed += (_, _) => { _settingsForm = null; Ui.Delay(10_000, TrimMemory); };
+        _settingsForm = f;
+        f.Show();
+        f.Activate();
+    }
+
+    void OnSettingsChanged()
+    {
+        _tray.SetHotkey(_s.Hotkey);
+        RefreshPolling();
+        UpdateBudsTargets(null);
+        _iconSig.Clear();
+        SyncTray();
+        ScheduleUpdateChecks();
+    }
+
+    // ───────────────────────────── Updates ─────────────────────────────
+
+    void ScheduleUpdateChecks()
+    {
+        _updateTimer?.Dispose();
+        _updateTimer = null;
+        if (!_s.CheckUpdates || !AppInfo.UpdatesConfigured) return;
+        var since = DateTime.UtcNow - _s.LastUpdateCheck;
+        var due = since >= TimeSpan.FromHours(24) ? TimeSpan.FromMinutes(3) : TimeSpan.FromHours(24) - since;
+        if (due < TimeSpan.FromMinutes(3)) due = TimeSpan.FromMinutes(3);
+        _updateTimer = new System.Threading.Timer(_ => Ui.Post(() => _ = CheckUpdatesAsync(false)), null, due, TimeSpan.FromHours(24));
+    }
+
+    async Task<string> CheckUpdatesAsync(bool manual)
+    {
+        try
+        {
+            var r = await _upd.CheckAsync();
+            _s.LastUpdateCheck = DateTime.UtcNow;
+            _s.Save();
+            if (r is null) return $"Установлена последняя версия ({AppInfo.VersionText})";
+            _pending = r;
+            if (_flyout is not null) { _flyout.PendingUpdate = r.VersionText; _flyout.Rebuild(); }
+            if (!manual && _s.AutoInstallUpdates)
+            {
+                await InstallUpdateAsync(r, silent: true);
+                return "";
+            }
+            if (manual || _s.SkippedVersion != r.Tag)
+            {
+                _s.SkippedVersion = r.Tag; // notify once per version
+                _toasts.ShowMessage($"Доступна версия {r.VersionText}", "Нажмите, чтобы обновить. Настройки и история сохранятся.", Glyphs.Download,
+                    () => _ = InstallUpdateAsync(r));
+            }
+            return $"Доступна версия {r.VersionText}";
+        }
+        catch (Exception e)
+        {
+            Log.Error("Update check", e);
+            return "Не удалось проверить: " + e.Message;
+        }
+    }
+
+    async Task InstallUpdateAsync(UpdateService.Release r, bool silent = false)
+    {
+        if (_installing) return;
+        _installing = true;
+        try
+        {
+            if (!silent) _toasts.ShowMessage($"Обновление до {r.VersionText}", "Загружаем и проверяем файл…", Glyphs.Sync);
+            await _upd.InstallAsync(r);
+            ExitApp();
+        }
+        catch (Exception e)
+        {
+            Log.Error("Update install", e);
+            _toasts.ShowMessage("Не удалось обновить", e.Message, Glyphs.Warning);
+        }
+        finally { _installing = false; }
+    }
+
+    // ───────────────────────────── Housekeeping ─────────────────────────────
+
+    void TrimMemory()
+    {
+        if (_flyout is not null || _hover is not null || _settingsForm is not null || _overlay is not null || _toasts.Visible) return;
+        GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
+        Native.TrimWorkingSet();
+    }
+
+    void ExitApp()
+    {
+        if (_exiting) return;
+        _exiting = true;
+        ExitThread();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _exiting = true;
+            try
+            {
+                _r.PersistAll();
+                _s.SaveNow();
+                _h.SaveNow();
+            }
+            catch (Exception e) { Log.Error("Save on exit", e); }
+
+            _showWait?.Unregister(null);
+            _showEvent?.Dispose();
+            _exitWait?.Unregister(null);
+            _exitEvent?.Dispose();
+            _updateTimer?.Dispose();
+            _toasts.CloseAll();
+            _overlay?.Close();
+            _flyout?.Close();
+            _hover?.Close();
+            _settingsForm?.Close();
+            foreach (var g in _gatt.Values) g.Dispose();
+            _gatt.Clear();
+            _scanner.Dispose();
+            _bt.Dispose();
+            _poller.Dispose();
+            _pads?.Dispose();
+            foreach (var i in _icons.Values.ToList()) i.Dispose();
+            _icons.Clear();
+            _appIcon?.Dispose();
+            _tray.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+}

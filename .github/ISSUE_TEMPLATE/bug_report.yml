@@ -1,0 +1,45 @@
+name: 🐞 Ошибка
+description: Что-то работает не так
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Спасибо, что сообщаете! Чем подробнее — тем быстрее исправим.
+  - type: input
+    id: version
+    attributes:
+      label: Версия Glance
+      description: Настройки → Обновления, или `glance --help` на Linux
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Система
+      options:
+        - Windows 11 (x64)
+        - Windows 10 (x64)
+        - Windows 10 (x86)
+        - Linux x64
+        - Linux ARM64
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Устройство
+      description: Точное название, как в параметрах Bluetooth
+      placeholder: "JBL Tune 230NC TWS"
+  - type: textarea
+    id: what
+    attributes:
+      label: Что произошло и что ожидалось
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Журнал
+      description: "Windows: %LOCALAPPDATA%\\Glance\\glance.log · Linux: ~/.local/share/glance/glance.log"
+      render: text

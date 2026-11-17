@@ -1,0 +1,125 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Glance;
+
+public enum TrayMode { PerDevice, Single }
+/// <summary>Tray icon look: draining battery (default), plain percent, or battery with digits inside.</summary>
+public enum IconStyle { Battery, Number, BatteryNumber }
+
+public sealed class DeviceSettings
+{
+    public string Name { get; set; } = "";
+    public string? CustomName { get; set; }
+    public bool HideInTray { get; set; }
+    public DeviceKind Kind { get; set; }
+    public int? LastLevel { get; set; }
+    public DateTime LastSeen { get; set; }
+}
+
+public sealed class AppSettings
+{
+    // Tray
+    public TrayMode TrayMode { get; set; } = TrayMode.PerDevice;
+    public IconStyle IconStyle { get; set; } = IconStyle.Battery;
+    public bool RichHover { get; set; } = true;
+
+    // Notifications
+    public bool ShowConnectPopup { get; set; } = true;
+    public int PopupSeconds { get; set; } = 6;
+    public bool LowBatteryAlerts { get; set; } = true;
+    public int LowBatteryThreshold { get; set; } = 20;
+    public bool FullChargeAlert { get; set; } = true;
+    public bool RespectFocus { get; set; } = true;
+
+    // Critical level: small click-through overlay that never steals focus (works over games)
+    public bool CriticalOverlay { get; set; } = true;
+    public int CriticalThreshold { get; set; } = 10;
+
+    // Earbuds
+    public bool BudsDetail { get; set; } = true;
+    public int RssiThreshold { get; set; } = -75;
+
+    // System
+    public int PollSeconds { get; set; } = 60;
+    public bool Hotkey { get; set; } = true;
+
+    // Updates
+    public bool CheckUpdates { get; set; } = true;
+    public bool AutoInstallUpdates { get; set; }
+    public DateTime LastUpdateCheck { get; set; }
+    public string? SkippedVersion { get; set; }
+
+    public Dictionary<string, DeviceSettings> Devices { get; set; } = new();
+
+    /// <summary>Raised (on the UI thread) after the user changed something in the settings window.</summary>
+    public event Action? Changed;
+
+    static string FilePath => Path.Combine(AppInfo.DataDir, "settings.json");
+
+    static readonly JsonSerializerOptions Json = new()
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    Debouncer? _saver;
+
+    public static AppSettings Load()
+    {
+        try
+        {
+            if (File.Exists(FilePath))
+            {
+                var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), Json);
+                if (s is not null) { s.Normalize(); return s; }
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error("Settings load", e);
+            try { File.Copy(FilePath, FilePath + ".bad", true); } catch { }
+        }
+        return new AppSettings();
+    }
+
+    void Normalize()
+    {
+        Devices ??= new();
+        PopupSeconds = Math.Clamp(PopupSeconds, 2, 30);
+        LowBatteryThreshold = Math.Clamp(LowBatteryThreshold, 5, 50);
+        RssiThreshold = Math.Clamp(RssiThreshold, -95, -40);
+        CriticalThreshold = Math.Clamp(CriticalThreshold, 3, 25);
+        if (CriticalThreshold >= LowBatteryThreshold) CriticalThreshold = Math.Max(3, LowBatteryThreshold - 5);
+        if (!Enum.IsDefined(IconStyle)) IconStyle = IconStyle.Battery;
+        PollSeconds = Math.Clamp(PollSeconds, 15, 600);
+    }
+
+    public DeviceSettings For(string key)
+    {
+        if (!Devices.TryGetValue(key, out var d)) Devices[key] = d = new DeviceSettings();
+        return d;
+    }
+
+    public void NotifyChanged()
+    {
+        Normalize();
+        Changed?.Invoke();
+        Save();
+    }
+
+    /// <summary>Debounced save; the write itself runs on the main thread.</summary>
+    public void Save() => (_saver ??= new Debouncer(3000, SaveNow)).Trigger();
+
+    public void SaveNow()
+    {
+        _saver?.Cancel();
+        try
+        {
+            var tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, Json));
+            File.Move(tmp, FilePath, true);
+        }
+        catch (Exception e) { Log.Error("Settings save", e); }
+    }
+}
