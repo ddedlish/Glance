@@ -17,7 +17,7 @@ internal sealed class ToastForm : CardForm
     Action? _onClick;
     readonly System.Windows.Forms.Timer _life = new();
     float _grow = 1;
-    Animator.Anim? _anim;
+    Animator.Anim? _anim, _slide;
     bool _closing, _hover;
     RectangleF _closeRect, _actionRect, _laterRect;
     int _baseY;
@@ -80,16 +80,15 @@ internal sealed class ToastForm : CardForm
         Relayout();
         var pos = PlaceNearTray(Size, null);
         _baseY = pos.Y;
-        Location = new Point(pos.X, pos.Y + Px(14));
+        Location = new Point(pos.X, pos.Y + Px(26));
         if (!Visible) Show();
         _anim?.Cancel();
         if (animateRings) _grow = 0;
-        _anim = Animator.Run(animateRings ? 650 : 220, p =>
-        {
-            if (IsDisposed) return;
-            Top = _baseY + (int)(Px(14) * (1 - Math.Min(1, p * 2.2f)));
-            if (animateRings) { _grow = p; Invalidate(); }
-        });
+        // Lands with a soft spring (slight overshoot), while rings/numbers fill up.
+        _slide?.Cancel();
+        _slide = Animator.Run(420, p => { if (!IsDisposed) Top = _baseY + (int)MathF.Round(Px(26) * (1 - p)); }, null, Animator.Spring);
+        if (animateRings)
+            _anim = Animator.Run(700, p => { if (IsDisposed) return; _grow = p; Invalidate(); });
         RestartLife();
     }
 
@@ -109,6 +108,7 @@ internal sealed class ToastForm : CardForm
         _closing = true;
         _life.Stop();
         _anim?.Cancel();
+        _slide?.Cancel();
         int startY = Top;
         Animator.Run(160, p => { if (!IsDisposed) Top = startY + (int)(Px(16) * p); }, () =>
         {
@@ -324,7 +324,7 @@ internal sealed class ToastForm : CardForm
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _life.Dispose(); _anim?.Cancel(); }
+        if (disposing) { _life.Dispose(); _anim?.Cancel(); _slide?.Cancel(); }
         base.Dispose(disposing);
     }
 }

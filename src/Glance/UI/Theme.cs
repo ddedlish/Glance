@@ -226,7 +226,7 @@ internal static class Animator
 {
     public sealed class Anim
     {
-        internal long Start; internal int Duration; internal Action<float> Step = _ => { }; internal Action? Done; internal bool Cancelled;
+        internal long Start; internal int Duration; internal Action<float> Step = _ => { }; internal Action? Done; internal bool Cancelled; internal Func<float, float> Ease = EaseOut;
         public void Cancel() => Cancelled = true;
     }
 
@@ -234,9 +234,9 @@ internal static class Animator
     static readonly Stopwatch Clock = Stopwatch.StartNew();
     static System.Windows.Forms.Timer? _timer;
 
-    public static Anim Run(int ms, Action<float> step, Action? done = null)
+    public static Anim Run(int ms, Action<float> step, Action? done = null, Func<float, float>? ease = null)
     {
-        var a = new Anim { Start = Clock.ElapsedMilliseconds, Duration = Math.Max(1, ms), Step = step, Done = done };
+        var a = new Anim { Start = Clock.ElapsedMilliseconds, Duration = Math.Max(1, ms), Step = step, Done = done, Ease = ease ?? EaseOut };
         Active.Add(a);
         if (_timer is null)
         {
@@ -260,7 +260,7 @@ internal static class Animator
         {
             if (a.Cancelled) { Active.Remove(a); continue; }
             float t = Math.Clamp((now - a.Start) / (float)a.Duration, 0, 1);
-            try { a.Step(EaseOut(t)); } catch (Exception e) { Log.Error("Anim", e); a.Cancelled = true; }
+            try { a.Step(a.Ease(t)); } catch (Exception e) { Log.Error("Anim", e); a.Cancelled = true; }
             if (t >= 1)
             {
                 Active.Remove(a);
@@ -279,6 +279,15 @@ internal static class Animator
     [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeEndPeriod(uint ms);
 
     public static float EaseOut(float t) => 1 - MathF.Pow(1 - t, 3);
+
+    /// <summary>Spring-like ease with a small overshoot (≈6 %) — for things that "land" (popups, cards).</summary>
+    public static float Spring(float t)
+    {
+        const float c1 = 1.25f, c3 = c1 + 1;
+        return 1 + c3 * MathF.Pow(t - 1, 3) + c1 * MathF.Pow(t - 1, 2);
+    }
+
+    public static float Linear(float t) => t;
 }
 
 /// <summary>GDI+ drawing primitives in the Windows 11 style.</summary>

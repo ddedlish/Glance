@@ -31,7 +31,7 @@ internal sealed class UpdateService
             ConnectTimeout = TimeSpan.FromSeconds(20),
         };
         var h = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(10) };
-        h.DefaultRequestHeaders.UserAgent.ParseAdd($"Glance/{AppInfo.VersionText}");
+        h.DefaultRequestHeaders.UserAgent.ParseAdd($"Glance/{Fmt.Ver(AppInfo.Version)}");
         return h;
     }
 

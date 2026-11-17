@@ -40,6 +40,9 @@ public sealed class AppSettings
     public bool CriticalOverlay { get; set; } = true;
     public int CriticalThreshold { get; set; } = 10;
     public bool CriticalSound { get; set; } = true;
+    /// <summary>Glance's own sounds (glass or classic set) for connect, disconnect, low, full and updates.</summary>
+    public bool Sounds { get; set; } = true;
+    public int SoundVolume { get; set; } = 60;
 
     // Quiet hours: low / full / connect popups stay silent at night (critical still shows)
     public bool QuietHours { get; set; }

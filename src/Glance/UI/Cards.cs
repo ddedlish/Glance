@@ -78,7 +78,7 @@ internal static class DeviceCard
         return span >= 3600 && max - min >= 3;
     }
 
-    public static void Draw(Graphics g, RectangleF r, Accessory a, float s, bool hot, bool detailed)
+    public static void Draw(Graphics g, RectangleF r, Accessory a, float s, bool hot, bool detailed, float grow = 1)
     {
         var t = Theme.Current;
         float cr = (t.Glass ? 12 : 8) * s;
@@ -104,11 +104,12 @@ internal static class DeviceCard
         float pw = a.Connected ? Math.Max(58 * s, Painter.Width(g, "100%", pctFont) + 14 * s) : 30 * s;
         if (a.Connected)
         {
-            Painter.Text(g, Fmt.Percent(lvl), pctFont, t.LevelColor(lvl, a.Charging, Svc.Low), new RectangleF(right - pw, r.Y + 11 * s, pw, 26 * s), StringAlignment.Far);
+            int? shown = lvl is int lg ? (int)MathF.Round(lg * grow) : null; // counts up when the panel opens
+            Painter.Text(g, Fmt.Percent(shown), pctFont, t.LevelColor(lvl, a.Charging, Svc.Low), new RectangleF(right - pw, r.Y + 11 * s, pw, 26 * s), StringAlignment.Far);
             if (a.Charging)
                 Painter.Glyph(g, Glyphs.Bolt, 12 * s, t.Good, new RectangleF(right - pw - 16 * s, r.Y + 15 * s, 16 * s, 18 * s));
             if (lvl is not null)
-                Painter.Bar(g, new RectangleF(right - 44 * s, r.Y + 41 * s, 44 * s, 4 * s), lvl.Value / 100f,
+                Painter.Bar(g, new RectangleF(right - 44 * s, r.Y + 41 * s, 44 * s, 4 * s), lvl.Value / 100f * grow,
                     t.BarColor(lvl, a.Charging, Svc.Low), Theme.Alpha(t.Track, 160));
         }
 

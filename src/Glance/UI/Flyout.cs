@@ -17,6 +17,19 @@ internal sealed class FlyoutForm : CardForm
 
     public string? PendingUpdate { get; set; }
     public event Action? SettingsRequested, UpdateRequested;
+    /// <summary>The update icon in the footer: check now (or install when an update is waiting).</summary>
+    public event Func<Task>? CheckUpdateRequested;
+    float _openT = 1, _spin;
+    bool _checking;
+    RectangleF _updBtn;
+
+    /// <summary>0…1 entrance progress of the card at <paramref name="i"/> (staggered by 45 ms).</summary>
+    float Arrive(int i)
+    {
+        if (_openT >= 1) return 1;
+        float ms = _openT * 560 - i * 45;
+        return Animator.EaseOut(Math.Clamp(ms / 300f, 0, 1));
+    }
     public event Action<Accessory, Point>? DeviceMenuRequested;
 
     public FlyoutForm() : base(true) { }
@@ -31,7 +44,11 @@ internal sealed class FlyoutForm : CardForm
         Activate();
         Native.SetForegroundWindow(Handle);
         int baseY = p.Y;
-        Animator.Run(200, k => { if (!IsDisposed) Top = baseY + (int)(Px(12) * (1 - k)); });
+        Location = new Point(p.X, p.Y + Px(22));
+        Animator.Run(380, k => { if (!IsDisposed) Top = baseY + (int)MathF.Round(Px(22) * (1 - k)); }, null, Animator.Spring);
+        // Cards arrive one after another and their levels count up.
+        _openT = 0;
+        Animator.Run(560, k => { if (IsDisposed) return; _openT = k; Invalidate(); }, () => _openT = 1, Animator.Linear);
     }
 
     public void Rebuild()
@@ -114,12 +131,14 @@ internal sealed class FlyoutForm : CardForm
         {
             var (a, section, r0) = _items[i];
             var r = Scaled(r0);
+            float arr = Arrive(i);
+            if (arr < 1) r.Offset(0, (1 - arr) * 16 * s);
             if (r.Bottom < view.Top || r.Top > view.Bottom) continue;
             if (section is not null)
                 Painter.Text(g, section, Fonts.Strong(12 * s), t.SubText, new RectangleF(r.X + 4 * s, r.Y + 4 * s, r.Width, r.Height - 4 * s));
             else
             {
-                DeviceCard.Draw(g, r, a!, s, i == _hot, true);
+                DeviceCard.Draw(g, r, a!, s, i == _hot, true, Arrive(i + 2));
                 if (a!.Key == _expKey && _expand > 0.05f)
                 {
                     var st2 = g.Save();
@@ -167,6 +186,9 @@ internal sealed class FlyoutForm : CardForm
         float btW = 40 * s + Painter.Width(g, "Bluetooth", btFont) + 14 * s;
         _btBtn = new RectangleF(Side * s, y + 10 * s, btW, 36 * s);
         _gearBtn = new RectangleF((W - Side - 38) * s, y + 9 * s, 38 * s, 38 * s);
+        _updBtn = new RectangleF(_gearBtn.X - 44 * s, _gearBtn.Y, 38 * s, 38 * s);
+        if (_hotBtn == "upd") Painter.FillRound(g, RectangleF.Inflate(_updBtn, -2 * s, -2 * s), 17 * s, t.SurfaceHover);
+        DrawUpdateIcon(g, _updBtn, s);
         if (_hotBtn == "bt") Painter.FillRound(g, _btBtn, 18 * s, t.SurfaceHover);
         if (_hotBtn == "gear") Painter.FillRound(g, RectangleF.Inflate(_gearBtn, -2 * s, -2 * s), 17 * s, t.SurfaceHover); // round, snug
         Painter.Glyph(g, Glyphs.Bluetooth, 16 * s, t.Text, new RectangleF(_btBtn.X + 8 * s, _btBtn.Y, 28 * s, _btBtn.Height));
@@ -194,6 +216,37 @@ internal sealed class FlyoutForm : CardForm
         _expAnim = Animator.Run(150, p => { if (IsDisposed) return; _expand = from + (1 - from) * p; Rebuild(); }, () => _expAnim = null);
     }
 
+    /// <summary>Circular-arrows icon; spins while checking; accent dot when a new version is waiting.</summary>
+    void DrawUpdateIcon(Graphics g, RectangleF r, float s)
+    {
+        var t = T;
+        var st = g.Save();
+        float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+        g.TranslateTransform(cx, cy);
+        g.RotateTransform(_spin);
+        g.TranslateTransform(-cx, -cy);
+        Painter.Glyph(g, Glyphs.Sync, 18 * s, PendingUpdate is not null ? t.AccentText : t.Text, r);
+        g.Restore(st);
+        if (PendingUpdate is not null)
+        {
+            var dot = new RectangleF(r.Right - 12 * s, r.Y + 6 * s, 8 * s, 8 * s);
+            using var b = new SolidBrush(Theme.VividRed);
+            g.FillEllipse(b, dot);
+        }
+    }
+
+    async Task RunUpdateCheckAsync()
+    {
+        if (_checking || CheckUpdateRequested is null) return;
+        _checking = true;
+        Animator.Anim? spin = null;
+        void Loop() => spin = Animator.Run(900, p => { if (IsDisposed) return; _spin = p * 360; Invalidate(); }, () => { if (_checking && !IsDisposed) Loop(); else { _spin = 0; Invalidate(); } }, Animator.Linear);
+        Loop();
+        try { await CheckUpdateRequested(); }
+        catch (Exception e) { Log.Error("Flyout update check", e); }
+        finally { _checking = false; }
+    }
+
     RectangleF Scaled(RectangleF r) => new(r.X * Sc, (r.Y - _scroll) * Sc, r.Width * Sc, r.Height * Sc);
 
     int HitCard(Point p)
@@ -205,7 +258,7 @@ internal sealed class FlyoutForm : CardForm
     }
 
     string HitButton(Point p) =>
-        _btBtn.Contains(p) ? "bt" : _gearBtn.Contains(p) ? "gear" : (!_bannerRect.IsEmpty && _bannerRect.Contains(p)) ? "banner" : "";
+        _btBtn.Contains(p) ? "bt" : _gearBtn.Contains(p) ? "gear" : _updBtn.Contains(p) ? "upd" : (!_bannerRect.IsEmpty && _bannerRect.Contains(p)) ? "banner" : "";
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
@@ -237,6 +290,10 @@ internal sealed class FlyoutForm : CardForm
             case "gear":
                 SettingsRequested?.Invoke();
                 CloseAnimated();
+                return;
+            case "upd":
+                if (PendingUpdate is not null) { UpdateRequested?.Invoke(); CloseAnimated(); }
+                else _ = RunUpdateCheckAsync();
                 return;
             case "banner":
                 UpdateRequested?.Invoke();

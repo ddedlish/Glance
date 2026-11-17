@@ -70,6 +70,7 @@ internal static class HidReceivers
     }
 
     static readonly HashSet<string> Logged = new();
+    static readonly Dictionary<string, (string Product, string Serial)> StringCache = new(StringComparer.OrdinalIgnoreCase);
 
     public static List<ReceiverReading> Read()
     {
@@ -113,8 +114,10 @@ internal static class HidReceivers
         if (q.IsInvalid) return;
         var attr = new HIDD_ATTRIBUTES { Size = (uint)Marshal.SizeOf<HIDD_ATTRIBUTES>() };
         if (!HidD_GetAttributes(q, ref attr)) return;
-        string product = HidString(q, HidD_GetProductString) ?? "";
-        string serial = HidString(q, HidD_GetSerialNumberString) ?? "";
+        // String descriptors are USB control transfers (slow): read them once per device path.
+        if (!StringCache.TryGetValue(path, out var strs))
+            StringCache[path] = strs = (HidString(q, HidD_GetProductString) ?? "", HidString(q, HidD_GetSerialNumberString) ?? "");
+        var (product, serial) = strs;
         string key = $"{attr.VendorID:X4}:{attr.ProductID:X4}:{serial}";
         if (!groups.TryGetValue(key, out var g)) groups[key] = g = new Group();
         if (product.Length > 0 && (g.Name.Length == 0 || product.Length < g.Name.Length)) g.Name = product;

@@ -17,7 +17,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
 
-    <Version>2.4.8</Version>
+    <Version>3.0.0</Version>
     <Product>Glance</Product>
     <Authors>ddedlish</Authors>
     <AssemblyTitle>Glance — заряд аксессуаров · by ddedlish</AssemblyTitle>
@@ -42,13 +42,19 @@
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <PublishReadyToRun>false</PublishReadyToRun>
+    <!-- 3.0: no bundle compression (the runtime is memory-mapped instead of unpacked on every start: faster launch,
+         less RAM) and ReadyToRun for Glance itself (no JIT warm-up for the UI). Delta updates keep downloads small. -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
 
   <!-- Update source, injected by CI: -p:GlanceUpdateRepo=owner/repo -->
   <ItemGroup Condition="'$(GlanceUpdateRepo)' != ''">
     <AssemblyMetadata Include="GlanceUpdateRepo" Value="$(GlanceUpdateRepo)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="GlanceChannel" Value="Beta" />
   </ItemGroup>
 
   <ItemGroup>

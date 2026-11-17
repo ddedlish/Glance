@@ -172,7 +172,19 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         var crit = new Stepper(sc, _s.CriticalThreshold, 3, 20, 1, v => $"{v}%");
         crit.ValueChanged += () => { _s.CriticalThreshold = crit.Value; _s.NotifyChanged(); };
         Row("Порог критического заряда", "", crit);
-        Row("Звук при критическом заряде", "Короткий системный сигнал вместе с баннером", Toggle(_s.CriticalSound, v => _s.CriticalSound = v));
+        Row("Звуки Glance", "Свои наборы: стеклянные колокольчики в Liquid Glass, чёткие сигналы в классике. Ночью и в играх молчат", Toggle(_s.Sounds, v => _s.Sounds = v));
+        var vol = new Stepper(sc, _s.SoundVolume, 10, 100, 10, v => $"{v}%");
+        vol.ValueChanged += () => { _s.SoundVolume = vol.Value; _s.NotifyChanged(); Sounds.Play(SoundKind.Connected, _s, preview: true); };
+        Row("Громкость звуков", "", vol);
+        var listen = new FlatButton(sc, "Прослушать");
+        listen.Click += (_, _) =>
+        {
+            Sounds.Play(SoundKind.Connected, _s, preview: true);
+            Ui.Delay(1100, () => Sounds.Play(SoundKind.Disconnected, _s, preview: true));
+            Ui.Delay(2200, () => Sounds.Play(SoundKind.Charged, _s, preview: true));
+        };
+        Row("Набор звуков", "Подключение, отключение, полный заряд — в текущем стиле", listen);
+        Row("Звук при критическом заряде", "Тревожный сигнал вместе с баннером — даже ночью", Toggle(_s.CriticalSound, v => _s.CriticalSound = v));
         Row("Полностью заряжено", "Сообщить, когда устройство на зарядке дошло до 100%", Toggle(_s.FullChargeAlert, v => _s.FullChargeAlert = v));
         var qFrom = new Stepper(sc, _s.QuietFrom, 0, 23, 1, v => $"с {v:00}:00");
         qFrom.ValueChanged += () => { _s.QuietFrom = qFrom.Value; _s.NotifyChanged(); };

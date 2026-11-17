@@ -220,3 +220,23 @@ public class VendorBatteryTests
         Assert.Equal(DeviceKind.Mouse, p.Kind);
     }
 }
+
+public class SoundSynthTests
+{
+    [Theory]
+    [InlineData(SoundKind.Connected, true)]
+    [InlineData(SoundKind.Critical, true)]
+    [InlineData(SoundKind.Update, false)]
+    [InlineData(SoundKind.Charged, false)]
+    public void Produces_short_valid_wav(SoundKind kind, bool glass)
+    {
+        var wav = SoundSynth.Wav(kind, glass, 0.6);
+        Assert.Equal((byte)'R', wav[0]);
+        Assert.Equal((byte)'W', wav[8]);
+        Assert.Equal(wav.Length - 8, BitConverter.ToInt32(wav, 4));
+        Assert.InRange(wav.Length, 2_000, 200_000); // < ~2 s
+        short peak = 0;
+        for (int i = 44; i + 1 < wav.Length; i += 2) peak = Math.Max(peak, Math.Abs(BitConverter.ToInt16(wav, i)));
+        Assert.InRange(peak, 5_000, 30_000); // audible, never clipping
+    }
+}

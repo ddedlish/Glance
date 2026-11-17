@@ -58,7 +58,12 @@ internal static class AppInfo
     public static Version Version { get; } =
         System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version ?? typeof(AppInfo).Assembly.GetName().Version ?? new Version(1, 0, 0);
 
-    public static string VersionText => Fmt.Ver(Version);
+    /// <summary>Release channel from AssemblyMetadata «GlanceChannel» (e.g. «Beta»), empty for stable builds.</summary>
+    public static string Channel { get; } = System.Reflection.Assembly.GetEntryAssembly()?
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false).OfType<System.Reflection.AssemblyMetadataAttribute>()
+        .FirstOrDefault(a => a.Key == "GlanceChannel")?.Value ?? "";
+
+    public static string VersionText => Channel.Length > 0 ? $"{Fmt.Ver(Version)} {Channel}" : Fmt.Ver(Version);
 
     public static string DataDir { get; } = CreateDataDir();
 

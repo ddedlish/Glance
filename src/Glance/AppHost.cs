@@ -158,6 +158,7 @@ internal sealed class AppHost : ApplicationContext
     {
         if (_gatt.Remove(a.Key, out var g)) g.Dispose();
         _matcher.Forget(a.Key);
+        if (_s.ShowConnectPopup && !a.Wired) Sounds.Play(SoundKind.Disconnected, _s);
         UpdateBudsTargets(null);
         RefreshPolling();
         SyncTray();
@@ -259,6 +260,7 @@ internal sealed class AppHost : ApplicationContext
         if (_s.RespectFocus && Native.UserIsBusy()) return;
         _lastPopup[a.Key] = DateTime.Now;
         _toasts.ShowDevice(a, ToastKind.Connected);
+        Sounds.Play(SoundKind.Connected, _s);
     }
 
     void CheckAlerts(Accessory a)
@@ -276,6 +278,7 @@ internal sealed class AppHost : ApplicationContext
                 {
                     _lowAlerted.Add(a.Key);
                     _toasts.ShowDevice(a, ToastKind.Low);
+                    Sounds.Play(SoundKind.Low, _s);
                 }
             }
             else if (charging || lv >= _s.LowBatteryThreshold + 5) _lowAlerted.Remove(a.Key);
@@ -291,7 +294,10 @@ internal sealed class AppHost : ApplicationContext
             if (full)
             {
                 if (_fullAlerted.Add(a.Key) && !(_s.RespectFocus && Native.UserIsBusy()) && !_s.IsQuietNow())
+                {
                     _toasts.ShowDevice(a, ToastKind.Charged);
+                    Sounds.Play(SoundKind.Charged, _s);
+                }
             }
             else if (!charging) _fullAlerted.Remove(a.Key);
         }
@@ -321,10 +327,7 @@ internal sealed class AppHost : ApplicationContext
         o.FormClosed += (_, _) => { if (_overlay == o) _overlay = null; };
         _overlay = o;
         o.Present();
-        if (_s.CriticalSound)
-        {
-            try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
-        }
+        if (_s.CriticalSound) Sounds.Play(SoundKind.Critical, _s, preview: !_s.Sounds); // critical plays even with other sounds off
     }
 
     // ───────────────────────────── Tray ─────────────────────────────
@@ -433,6 +436,11 @@ internal sealed class AppHost : ApplicationContext
         var f = new FlyoutForm { PendingUpdate = _pending?.VersionText };
         f.SettingsRequested += OpenSettings;
         f.UpdateRequested += () => { if (_pending is not null) _ = InstallUpdateAsync(_pending); };
+        f.CheckUpdateRequested += async () =>
+        {
+            var msg = await CheckUpdatesAsync(manual: true);
+            if (_pending is null) _toasts.ShowMessage("Обновлений нет", msg, Glyphs.Check);
+        };
         f.DeviceMenuRequested += (a, pt) => ShowDeviceMenu(a, pt, f);
         f.FormClosed += (_, _) =>
         {
@@ -577,6 +585,7 @@ internal sealed class AppHost : ApplicationContext
                 _s.SkippedVersion = r.Tag;
                 _s.UpdateRemindedAt = DateTime.UtcNow;
                 _s.Save();
+                Sounds.Play(SoundKind.Update, _s);
                 _toasts.ShowAction($"Доступна версия {r.VersionText}", UpdateSummary(r), Glyphs.Download, "Обновить",
                     () => _ = InstallUpdateAsync(r));
             }
