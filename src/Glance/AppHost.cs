@@ -447,7 +447,7 @@ internal sealed class AppHost : ApplicationContext
         if (_r.Get(icon.Key) is Accessory a)
         {
             m.Header($"{a.DisplayName} — {Fmt.Percent(a.Level)}");
-            m.Item("Переименовать…", () => Rename(a));
+            m.Item("Переименовать…", () => Ui.Post(() => Rename(a)));
             m.Item("Скрыть из трея", () => { _s.For(a.Key).HideInTray = true; _s.Save(); SyncTray(); });
             m.Separator();
         }
@@ -455,7 +455,7 @@ internal sealed class AppHost : ApplicationContext
         if (_pending is not null) m.Item($"Установить версию {_pending.VersionText}", () => _ = InstallUpdateAsync(_pending));
         var hidden = _r.All.Where(x => _s.For(x.Key).HideInTray && x.Connected).ToList();
         foreach (var x in hidden) m.Item($"Показать в трее: {x.DisplayName}", () => { _s.For(x.Key).HideInTray = false; _s.Save(); SyncTray(); });
-        m.Item("Параметры Bluetooth", FlyoutForm.OpenBluetoothSettings);
+        m.Item("Bluetooth", FlyoutForm.OpenBluetoothSettings);
         m.Item("Настройки Glance", OpenSettings);
         m.Separator();
         m.Item("Выход", ExitApp);
@@ -467,29 +467,40 @@ internal sealed class AppHost : ApplicationContext
     {
         var m = Menus.Create();
         var ds = _s.For(a.Key);
-        m.Item("Переименовать…", () => Rename(a));
+        m.Item("Переименовать…", () => Ui.Post(() => Rename(a))); // after the menu has closed
         if (ds.HideInTray) m.Item("Показывать в трее", () => { ds.HideInTray = false; _s.Save(); SyncTray(); });
         else m.Item("Скрыть из трея", () => { ds.HideInTray = true; _s.Save(); SyncTray(); });
         if (!a.Connected) m.Item("Убрать из списка", () => _r.Forget(a));
         m.Separator();
-        m.Item("Параметры Bluetooth", FlyoutForm.OpenBluetoothSettings);
+        m.Item("Bluetooth", FlyoutForm.OpenBluetoothSettings);
         owner.MenuOpen = true;
         m.Closed += (_, _) =>
         {
             owner.MenuOpen = false;
             Ui.Delay(50, () => { if (!owner.IsDisposed && Form.ActiveForm != owner) owner.CloseAnimated(); });
         };
-        m.Show(screenPt);
+        m.Show(screenPt, ToolStripDropDownDirection.BelowLeft);
     }
+
+    bool _renaming;
 
     void Rename(Accessory a)
     {
-        _flyout?.CloseAnimated();
-        var name = InputForm.Ask("Переименовать", $"Имя для «{a.Name}»", a.DisplayName);
-        if (name is null) return;
-        _s.For(a.Key).CustomName = name.Length == 0 || name == a.Name ? null : name;
-        _s.Save();
-        _r.Touch(a);
+        if (_renaming) return;
+        _renaming = true;
+        try
+        {
+            _flyout?.CloseAnimated();
+            var name = InputForm.Ask("Переименовать", $"Имя для «{a.Name}»", a.DisplayName);
+            if (name is null) return;
+            _s.For(a.Key).CustomName = name.Length == 0 || name == a.Name ? null : name;
+            _s.Save();
+            _r.Touch(a);
+            _iconSig.Clear();
+            SyncTray();
+        }
+        catch (Exception e) { Log.Error("Rename", e); }
+        finally { _renaming = false; }
     }
 
     void OpenSettings()

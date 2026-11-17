@@ -317,20 +317,29 @@ internal sealed class InputForm : Form
         };
         Controls.Add(_box);
 
-        var ok = new FlatButton(sc, "Сохранить", primary: true);
-        var cancel = new FlatButton(sc, "Отмена");
+        // Plain system buttons: this modal dialog stays as simple (and robust) as possible.
+        Button Btn(string text, bool primary) => new()
+        {
+            Text = text,
+            AutoSize = false,
+            Size = new Size(Px(primary ? 120 : 96), Px(34)),
+            FlatStyle = FlatStyle.Flat,
+            Font = Fonts.Regular(13 * sc),
+            BackColor = primary ? t.AccentFill : t.SurfaceSolid,
+            ForeColor = primary ? t.OnAccent : t.Text,
+            FlatAppearance = { BorderSize = primary ? 0 : 1, BorderColor = t.Opaque(t.Border) },
+            UseVisualStyleBackColor = false,
+        };
+        var ok = Btn("Сохранить", true);
+        var cancel = Btn("Отмена", false);
+        AcceptButton = ok;
+        CancelButton = cancel;
         cancel.Location = new Point(ClientSize.Width - Px(20) - cancel.Width, ClientSize.Height - Px(16) - cancel.Height);
         ok.Location = new Point(cancel.Left - Px(8) - ok.Width, cancel.Top);
-        ok.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
-        cancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
+        ok.DialogResult = DialogResult.OK;
+        cancel.DialogResult = DialogResult.Cancel;
         Controls.Add(ok);
         Controls.Add(cancel);
-        KeyPreview = true;
-        KeyDown += (_, e) =>
-        {
-            if (e.KeyCode == Keys.Enter) { DialogResult = DialogResult.OK; Close(); }
-            if (e.KeyCode == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); }
-        };
         HandleCreated += (_, _) => Native.DarkTitleBar(Handle, t.Dark);
         Shown += (_, _) => { _box.Focus(); _box.SelectAll(); };
     }

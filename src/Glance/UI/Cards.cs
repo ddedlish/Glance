@@ -98,16 +98,19 @@ internal static class DeviceCard
         float x0 = r.X + 64 * s, right = r.Right - 12 * s;
 
         // percent + mini bar
-        int? lvl = a.Connected ? a.Level : a.LastLevel;
+        // Disconnected devices show no stale percentage; connected ones without data show «—» and no bar.
+        int? lvl = a.Connected ? a.Level : null;
         var pctFont = Fonts.Big(18 * s);
-        string pct = Fmt.Percent(lvl);
-        float pw = Math.Max(58 * s, Painter.Width(g, "100%", pctFont) + 14 * s);
-        var pctColor = dim ? t.SubText : t.LevelColor(lvl, a.Charging, Svc.Low);
-        Painter.Text(g, pct, pctFont, pctColor, new RectangleF(right - pw, r.Y + 11 * s, pw, 26 * s), StringAlignment.Far);
-        if (a.Charging && !dim)
-            Painter.Glyph(g, Glyphs.Bolt, 12 * s, t.Good, new RectangleF(right - pw - 16 * s, r.Y + 15 * s, 16 * s, 18 * s));
-        Painter.Bar(g, new RectangleF(right - 44 * s, r.Y + 41 * s, 44 * s, 4 * s), (lvl ?? 0) / 100f,
-            dim ? t.Track : t.BarColor(lvl, a.Charging, Svc.Low), Theme.Alpha(t.Track, 160));
+        float pw = a.Connected ? Math.Max(58 * s, Painter.Width(g, "100%", pctFont) + 14 * s) : 30 * s;
+        if (a.Connected)
+        {
+            Painter.Text(g, Fmt.Percent(lvl), pctFont, t.LevelColor(lvl, a.Charging, Svc.Low), new RectangleF(right - pw, r.Y + 11 * s, pw, 26 * s), StringAlignment.Far);
+            if (a.Charging)
+                Painter.Glyph(g, Glyphs.Bolt, 12 * s, t.Good, new RectangleF(right - pw - 16 * s, r.Y + 15 * s, 16 * s, 18 * s));
+            if (lvl is not null)
+                Painter.Bar(g, new RectangleF(right - 44 * s, r.Y + 41 * s, 44 * s, 4 * s), lvl.Value / 100f,
+                    t.BarColor(lvl, a.Charging, Svc.Low), Theme.Alpha(t.Track, 160));
+        }
 
         // name + status
         float textW = right - pw - 20 * s - x0;

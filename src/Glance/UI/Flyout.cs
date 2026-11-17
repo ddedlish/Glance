@@ -116,7 +116,11 @@ internal sealed class FlyoutForm : CardForm
             {
                 DeviceCard.Draw(g, r, a!, s, i == _hot, true);
                 if (i == _hot)
-                    Painter.Glyph(g, Glyphs.More, 12 * s, t.SubText, new RectangleF(r.Right - 30 * s, r.Bottom - 22 * s, 24 * s, 18 * s));
+                {
+                    var dots = MoreRect(r);
+                    if (_hotMore) Painter.FillRound(g, dots, dots.Height / 2, t.SurfaceHover);
+                    Painter.Glyph(g, Glyphs.More, 18 * s, t.Text, dots);
+                }
             }
         }
         g.Restore(state);
@@ -149,14 +153,20 @@ internal sealed class FlyoutForm : CardForm
 
         // footer
         using (var pen = new Pen(t.Border, Math.Max(1, s))) g.DrawLine(pen, 0, y, W * s, y);
-        _btBtn = new RectangleF(Side * s, y + 10 * s, 200 * s, 36 * s);
-        _gearBtn = new RectangleF((W - Side - 36) * s, y + 10 * s, 36 * s, 36 * s);
-        if (_hotBtn == "bt") Painter.FillRound(g, _btBtn, 6 * s, t.SurfaceHover);
-        if (_hotBtn == "gear") Painter.FillRound(g, _gearBtn, 6 * s, t.SurfaceHover);
-        Painter.Glyph(g, Glyphs.Bluetooth, 14 * s, t.Text, new RectangleF(_btBtn.X + 4 * s, _btBtn.Y, 28 * s, _btBtn.Height));
-        Painter.Text(g, "Параметры Bluetooth", Fonts.Regular(12.5f * s), t.Text, new RectangleF(_btBtn.X + 32 * s, _btBtn.Y, _btBtn.Width - 34 * s, _btBtn.Height));
-        Painter.Glyph(g, Glyphs.Settings, 15 * s, t.Text, _gearBtn);
+        var btFont = Fonts.Regular(14.5f * s);
+        float btW = 40 * s + Painter.Width(g, "Bluetooth", btFont) + 14 * s;
+        _btBtn = new RectangleF(Side * s, y + 10 * s, btW, 36 * s);
+        _gearBtn = new RectangleF((W - Side - 38) * s, y + 9 * s, 38 * s, 38 * s);
+        if (_hotBtn == "bt") Painter.FillRound(g, _btBtn, 18 * s, t.SurfaceHover);
+        if (_hotBtn == "gear") Painter.FillRound(g, RectangleF.Inflate(_gearBtn, -2 * s, -2 * s), 17 * s, t.SurfaceHover); // round, snug
+        Painter.Glyph(g, Glyphs.Bluetooth, 16 * s, t.Text, new RectangleF(_btBtn.X + 8 * s, _btBtn.Y, 28 * s, _btBtn.Height));
+        Painter.Text(g, "Bluetooth", btFont, t.Text, new RectangleF(_btBtn.X + 40 * s, _btBtn.Y, _btBtn.Width - 42 * s, _btBtn.Height));
+        Painter.Glyph(g, Glyphs.Settings, 20 * s, t.Text, _gearBtn);
     }
+
+    /// <summary>The «⋯» button in the bottom-right corner of a card.</summary>
+    RectangleF MoreRect(RectangleF card) => new(card.Right - 40 * Sc, card.Bottom - 30 * Sc, 32 * Sc, 26 * Sc);
+    bool _hotMore;
 
     RectangleF Scaled(RectangleF r) => new(r.X * Sc, (r.Y - _scroll) * Sc, r.Width * Sc, r.Height * Sc);
 
@@ -176,7 +186,8 @@ internal sealed class FlyoutForm : CardForm
         base.OnMouseMove(e);
         int hot = HitCard(e.Location);
         string btn = HitButton(e.Location);
-        if (hot != _hot || btn != _hotBtn) { _hot = hot; _hotBtn = btn; Invalidate(); }
+        bool more = hot >= 0 && MoreRect(Scaled(_items[hot].R)).Contains(e.Location);
+        if (hot != _hot || btn != _hotBtn || more != _hotMore) { _hot = hot; _hotBtn = btn; _hotMore = more; Invalidate(); }
         Cursor = hot >= 0 || btn.Length > 0 ? Cursors.Hand : Cursors.Default;
     }
 
@@ -205,7 +216,12 @@ internal sealed class FlyoutForm : CardForm
                 return;
         }
         int i = HitCard(e.Location);
-        if (i >= 0 && _items[i].A is Accessory a) DeviceMenuRequested?.Invoke(a, PointToScreen(e.Location));
+        if (i >= 0 && _items[i].A is Accessory a)
+        {
+            // The menu drops down from the «⋯» button.
+            var dots = MoreRect(Scaled(_items[i].R));
+            DeviceMenuRequested?.Invoke(a, PointToScreen(new Point((int)dots.Right, (int)dots.Bottom + Px(2))));
+        }
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
