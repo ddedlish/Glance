@@ -115,7 +115,8 @@ internal static class HidGamepads
             if (n <= 0) return null;
             var parsed = DualSense.Contains(pid) ? ParseDualSense(buf.AsSpan(0, n)) : ParseDualShock4(buf.AsSpan(0, n));
             if (parsed is { } p)
-                return new GamepadReading("HID:" + serial, product, p.Item1, p.Item2);
+                return new GamepadReading("HID:" + serial, product, p.Item1, p.Item2,
+                    path.Contains("{00001124", StringComparison.OrdinalIgnoreCase) || path.Contains("bth", StringComparison.OrdinalIgnoreCase) ? "Bluetooth" : "USB");
         }
         return null;
     }

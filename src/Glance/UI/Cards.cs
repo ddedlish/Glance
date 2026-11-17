@@ -20,12 +20,12 @@ internal static class Svc
     public static string Status(Accessory a)
     {
         if (!a.Connected) return $"Не подключено · {Fmt.Ago(a.LastSeen)}";
-        if (a.Charging) return "Заряжается";
-        if (a.Level is null && !a.HasParts && a.Wired) return "Подключено по USB";
-        if (a.Level is null && !a.HasParts && a.ViaReceiver) return "Подключено · приёмник 2.4 ГГц";
-        if (a.Level is null && !a.HasParts) return a.BudsPending ? "Подключено · получаем данные…" : "Подключено · нет данных о заряде";
-        if (a.BudsPending) return "Подключено · ищем каждый наушник…";
-        return "Подключено";
+        string link = a.Link;
+        if (a.Charging) return $"Заряжается · {link}";
+        if (a.Level is null && !a.HasParts && (a.Wired || a.ViaReceiver)) return $"Подключено · {link}";
+        if (a.Level is null && !a.HasParts) return a.BudsPending ? $"{link} · получаем данные…" : $"{link} · нет данных о заряде";
+        if (a.BudsPending) return $"{link} · ищем каждый наушник…";
+        return $"Подключено · {link}";
     }
 
     public static string Subtitle(Accessory a)
@@ -40,8 +40,8 @@ internal static class Svc
     public static string Tooltip(Accessory a)
     {
         var s = a.Level is null && !a.HasParts
-            ? $"{a.DisplayName} — подключено{(a.Wired ? " (USB)" : a.ViaReceiver ? " (2.4 ГГц)" : "")}"
-            : $"{a.DisplayName} — {Fmt.Percent(a.Level)}";
+            ? $"{a.DisplayName} — подключено{$" ({a.Link})"}"
+            : $"{a.DisplayName} — {Fmt.Percent(a.Level)} · {a.Link}";
         if (a.Charging) s += " ⚡";
         if (a.HasParts)
         {

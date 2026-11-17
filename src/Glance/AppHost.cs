@@ -76,7 +76,13 @@ internal sealed class AppHost : ApplicationContext
         // On autostart give the system a few seconds to settle (less contention at logon).
         Ui.Delay(autostart ? 5000 : 10, StartMonitoring);
         if (afterUpdate)
-            Ui.Delay(1500, () => _toasts.ShowMessage($"Glance обновлён до {AppInfo.VersionText}", "Всё работает как прежде — настройки и история сохранены.", Glyphs.Check));
+            Ui.Delay(1500, () =>
+            {
+                string what = string.IsNullOrWhiteSpace(_s.UpdateNotes) ? "Настройки и история сохранены." : _s.UpdateNotes!;
+                _s.UpdateNotes = null;
+                _s.Save();
+                _toasts.ShowMessage($"Glance обновлён до {AppInfo.VersionText}", what, Glyphs.Check);
+            });
 
         ScheduleUpdateChecks();
         Ui.Delay(30_000, TrimMemory);
@@ -484,13 +490,21 @@ internal sealed class AppHost : ApplicationContext
 
     bool _renaming;
 
-    void Rename(Accessory a)
+    void Rename(Accessory a) => Rename(a, 0);
+
+    void Rename(Accessory a, int attempt)
     {
         if (_renaming) return;
         _renaming = true;
         try
         {
-            _flyout?.CloseAnimated();
+            if (_flyout is { IsDisposed: false } fl && attempt < 4)
+            {
+                // let the panel finish closing first, then open the dialog on its own
+                fl.CloseAnimated();
+                Ui.Delay(260, () => Rename(a, attempt + 1));
+                return;
+            }
             var name = InputForm.Ask("Переименовать", $"Имя для «{a.Name}»", a.DisplayName);
             if (name is null) return;
             _s.For(a.Key).CustomName = name.Length == 0 || name == a.Name ? null : name;
@@ -533,8 +547,8 @@ internal sealed class AppHost : ApplicationContext
         _updateTimer?.Dispose();
         _updateTimer = null;
         if (!_s.CheckUpdates || !AppInfo.UpdatesConfigured) return;
-        // Shortly after every start, then every 6 hours: a new version is noticed the same day.
-        _updateTimer = new System.Threading.Timer(_ => Ui.Post(() => _ = CheckUpdatesAsync(false)), null, TimeSpan.FromSeconds(25), TimeSpan.FromHours(6));
+        // 15 s after start, then every 30 minutes (2 GitHub requests an hour — far below its limit).
+        _updateTimer = new System.Threading.Timer(_ => Ui.Post(() => _ = CheckUpdatesAsync(false)), null, TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(30));
     }
 
     async Task<string> CheckUpdatesAsync(bool manual)
@@ -551,6 +565,9 @@ internal sealed class AppHost : ApplicationContext
             if (isNew) { _iconSig.Clear(); SyncTray(); } // tooltip line «Доступно обновление»
             if (!manual && _s.AutoInstallUpdates)
             {
+                // Visible even in auto mode: a notification now, «что нового» after the restart.
+                _toasts.ShowMessage($"Найдена версия {r.VersionText}", "Устанавливаем — Glance перезапустится через несколько секунд.", Glyphs.Download);
+                await Task.Delay(4000);
                 await InstallUpdateAsync(r, silent: true);
                 return "";
             }
@@ -592,6 +609,8 @@ internal sealed class AppHost : ApplicationContext
         try
         {
             if (!silent) _toasts.ShowMessage($"Обновление до {r.VersionText}", "Загружаем и проверяем файл…", Glyphs.Sync);
+            _s.UpdateNotes = UpdateSummary(r).Replace("Настройки и история сохранятся.", "").Replace("Скачается только изменившаяся часть.", "").Trim();
+            _s.Save();
             await _upd.InstallAsync(r);
             ExitApp();
         }

@@ -240,6 +240,7 @@ internal sealed class DeviceRegistry
                 }
             }
             a.GamepadId = p.Id;
+            a.LinkHint = p.Link;
             seen.Add(a.Key);
             if (a.Key.StartsWith("GP:") && !a.Connected)
             {

@@ -3,7 +3,7 @@ using Windows.System.Power;
 
 namespace Glance;
 
-public sealed record GamepadReading(string Id, string Name, int Level, bool Charging);
+public sealed record GamepadReading(string Id, string Name, int Level, bool Charging, string? Link = null);
 
 /// <summary>Xbox-compatible wireless controllers via Windows.Gaming.Input battery reports.</summary>
 internal sealed class GamepadProvider : IDisposable
@@ -38,7 +38,8 @@ internal sealed class GamepadProvider : IDisposable
                 var raw = RawGameController.FromGameController(gp);
                 string name = raw?.DisplayName is { Length: > 0 } n ? n : "Геймпад";
                 string id = raw?.NonRoamableId is { Length: > 0 } i ? i : name;
-                list.Add(new GamepadReading(id, name, Math.Clamp(level, 0, 100), rep.Status == BatteryStatus.Charging));
+                // a wireless Xbox pad that is not a Bluetooth device here is on the Xbox Wireless adapter
+                list.Add(new GamepadReading(id, name, Math.Clamp(level, 0, 100), rep.Status == BatteryStatus.Charging, raw?.IsWireless == true ? "адаптер Xbox" : "USB"));
             }
         }
         catch (Exception e) { Log.Info($"Gamepad read: {e.Message}"); }
@@ -75,7 +76,10 @@ internal sealed class BatteryPoller : IDisposable
     {
         _pads = pads;
         _timer = new System.Threading.Timer(_ => ReadNow(), null, Timeout.Infinite, Timeout.Infinite);
+        HidReceivers.VendorChanged += OnVendor;
     }
+
+    void OnVendor() => ReadSoon(300);
 
     public void SetEnabled(bool enabled, int periodSeconds)
     {
@@ -114,6 +118,7 @@ internal sealed class BatteryPoller : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        HidReceivers.VendorChanged -= OnVendor;
         _timer.Dispose();
     }
 }

@@ -55,8 +55,10 @@ public sealed class Accessory
     public bool ViaReceiver { get; set; }
     /// <summary>Plugged in by USB cable (no receiver, no battery to watch).</summary>
     public bool Wired { get; set; }
-    /// <summary>How it is connected, for labels: «USB», «2.4 ГГц» or «Bluetooth».</summary>
-    public string Link => Wired ? "USB" : ViaReceiver ? "2.4 ГГц" : "Bluetooth";
+    /// <summary>Connection reported by a provider (gamepads: «USB», «адаптер Xbox», «Bluetooth»).</summary>
+    public string? LinkHint { get; set; }
+    /// <summary>How it is connected, for labels: «Bluetooth», «2.4 ГГц», «USB», «адаптер Xbox».</summary>
+    public string Link => Wired ? "USB" : ViaReceiver ? "2.4 ГГц" : Key.StartsWith("BT:", StringComparison.Ordinal) || Key.StartsWith("AEP:", StringComparison.Ordinal) ? "Bluetooth" : LinkHint ?? "USB";
     public Dictionary<string, bool> Endpoints { get; } = new(StringComparer.Ordinal);
 
     // Classification

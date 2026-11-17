@@ -68,10 +68,14 @@ internal sealed class FlyoutForm : CardForm
         foreach (var (a, section) in entries)
         {
             float h = section is not null ? 26 : DeviceCard.Height(a!, true);
+            if (a is not null && a.Key == _expKey) h += Expand * _expand; // hovered card opens a strip below
             _items.Add((a, section, new RectangleF(Side, y, W - 2 * Side, h)));
             y += h + Gap;
         }
         if (entries.Count == 0) y += 150;
+        // Room for the hover strip is reserved at the end: opening it pushes the cards below down into this
+        // space, so the panel never resizes or jumps and nothing is covered.
+        else y += Expand * (_expKey is null ? 1 : 1 - _expand);
         _contentH = y - Header;
         float extra = Footer + (PendingUpdate is not null ? Banner : 0);
         var wa = Screen.FromPoint(Location.IsEmpty ? Cursor.Position : Location).WorkingArea;
@@ -115,11 +119,16 @@ internal sealed class FlyoutForm : CardForm
             else
             {
                 DeviceCard.Draw(g, r, a!, s, i == _hot, true);
-                if (i == _hot)
+                if (a!.Key == _expKey && _expand > 0.05f)
                 {
+                    var st2 = g.Save();
+                    g.SetClip(RectangleF.Intersect(view, r));
                     var dots = MoreRect(r);
+                    var c = Theme.Alpha(t.Text, (int)(255 * Math.Clamp((_expand - 0.3f) / 0.7f, 0, 1)));
                     if (_hotMore) Painter.FillRound(g, dots, dots.Height / 2, t.SurfaceHover);
-                    Painter.Glyph(g, Glyphs.More, 18 * s, t.Text, dots);
+                    Painter.Glyph(g, Glyphs.More, 18 * s, c, new RectangleF(dots.X + 6 * s, dots.Y, 26 * s, dots.Height));
+                    Painter.Text(g, "Действия", Fonts.Regular(12.5f * s), c, new RectangleF(dots.X + 34 * s, dots.Y, dots.Width - 38 * s, dots.Height));
+                    g.Restore(st2);
                 }
             }
         }
@@ -164,9 +173,25 @@ internal sealed class FlyoutForm : CardForm
         Painter.Glyph(g, Glyphs.Settings, 20 * s, t.Text, _gearBtn);
     }
 
-    /// <summary>The «⋯» button in the bottom-right corner of a card.</summary>
-    RectangleF MoreRect(RectangleF card) => new(card.Right - 40 * Sc, card.Bottom - 30 * Sc, 32 * Sc, 26 * Sc);
+    /// <summary>The «⋯ Действия» button in the strip that opens under a hovered card (covers nothing).</summary>
+    RectangleF MoreRect(RectangleF card) => new(card.Right - 124 * Sc, card.Bottom - (Expand - 2) * Sc, 114 * Sc, (Expand - 8) * Sc);
     bool _hotMore;
+
+    const float Expand = 36;
+    string? _expKey;
+    float _expand;
+    Animator.Anim? _expAnim;
+
+    /// <summary>Smoothly opens the strip under the hovered card and closes the previous one.</summary>
+    void SetExpanded(string? key)
+    {
+        if (key == _expKey && _expAnim is null) return;
+        _expAnim?.Cancel();
+        if (key != _expKey) { _expKey = key; _expand = 0; }
+        if (key is null) { Rebuild(); return; }
+        float from = _expand;
+        _expAnim = Animator.Run(150, p => { if (IsDisposed) return; _expand = from + (1 - from) * p; Rebuild(); }, () => _expAnim = null);
+    }
 
     RectangleF Scaled(RectangleF r) => new(r.X * Sc, (r.Y - _scroll) * Sc, r.Width * Sc, r.Height * Sc);
 
@@ -186,8 +211,9 @@ internal sealed class FlyoutForm : CardForm
         base.OnMouseMove(e);
         int hot = HitCard(e.Location);
         string btn = HitButton(e.Location);
-        bool more = hot >= 0 && MoreRect(Scaled(_items[hot].R)).Contains(e.Location);
+        bool more = hot >= 0 && _expand > 0.5f && _items[hot].A?.Key == _expKey && MoreRect(Scaled(_items[hot].R)).Contains(e.Location);
         if (hot != _hot || btn != _hotBtn || more != _hotMore) { _hot = hot; _hotBtn = btn; _hotMore = more; Invalidate(); }
+        if (hot >= 0 && _items[hot].A is Accessory ha) SetExpanded(ha.Key);
         Cursor = hot >= 0 || btn.Length > 0 ? Cursors.Hand : Cursors.Default;
     }
 
@@ -195,6 +221,7 @@ internal sealed class FlyoutForm : CardForm
     {
         base.OnMouseLeave(e);
         if (_hot != -1 || _hotBtn.Length > 0) { _hot = -1; _hotBtn = ""; Invalidate(); }
+        if (!MenuOpen) SetExpanded(null);
     }
 
     protected override void OnMouseUp(MouseEventArgs e)

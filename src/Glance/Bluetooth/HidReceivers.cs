@@ -200,52 +200,75 @@ internal static class HidReceivers
     /// We only listen (read-only handle, nothing is ever written to the mouse) for up to ~4.5 s and accept a frame
     /// only after seeing it twice in the exact format. While the mouse sleeps the last level is kept for 30 min.
     /// </summary>
+    /// <summary>Raised (any thread) when a listener gets a new battery value: the poller refreshes at once.</summary>
+    public static event Action? VendorChanged;
+
+    static readonly Dictionary<string, Thread> Listeners = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The receiver only talks while the mouse is awake, so instead of a short polling window a tiny background
+    /// thread stays blocked on ReadFile for that one collection (no CPU while idle) and caches every frame.
+    /// The poller just takes the cached value; the last level is kept for an hour while the mouse sleeps.
+    /// </summary>
     static void TryXenta(string path, int reportLen, string key, string product, Group g)
     {
-        const uint FILE_FLAG_OVERLAPPED = 0x40000000;
-        (int Level, bool Charging)? found = null;
-        try
-        {
-            using var h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
-            if (h.IsInvalid) g.Diag.Add($"{MiCol(path)} open failed ({Marshal.GetLastWin32Error()})");
-            else
-            {
-                using var fs = new FileStream(h, FileAccess.Read, 0, isAsync: true);
-                var buf = new byte[Math.Max(reportLen, 8)];
-                var deadline = DateTime.UtcNow.AddMilliseconds(4500);
-                (int, bool)? prev = null;
-                for (int i = 0; i < 12 && found is null; i++)
-                {
-                    var left = deadline - DateTime.UtcNow;
-                    if (left <= TimeSpan.Zero) break;
-                    using var cts = new CancellationTokenSource(left);
-                    int n;
-                    try { n = fs.ReadAsync(buf, 0, reportLen, cts.Token).GetAwaiter().GetResult(); }
-                    catch (OperationCanceledException) { break; }
-                    if (n < 5) continue;
-                    if (g.Diag.Count < 24) g.Diag.Add("rx " + Convert.ToHexString(buf, 0, Math.Min(n, 8)));
-                    var frame = VendorBattery.ParseXenta(buf.AsSpan(0, n));
-                    if (frame is null) continue;
-                    if (prev == frame) found = frame; // sent twice in a row: confirmed
-                    prev = frame;
-                }
-                // A single valid frame is still good when the window closed before the repeat.
-                found ??= prev;
-            }
-        }
-        catch (Exception e) { g.Diag.Add($"{MiCol(path)} read failed: {e.Message}"); }
-
+        bool started = false;
         lock (VendorLock)
         {
-            if (found is (int lvl, bool ch)) LastVendor[key] = (lvl, ch, DateTime.UtcNow);
-            else if (LastVendor.TryGetValue(key, out var last) && DateTime.UtcNow - last.At < TimeSpan.FromMinutes(30)) found = (last.Level, last.Charging);
+            if (!Listeners.TryGetValue(path, out var th) || !th.IsAlive)
+            {
+                th = new Thread(() => Listen(path, reportLen, key)) { IsBackground = true, Name = "Glance Xenta", Priority = ThreadPriority.BelowNormal };
+                Listeners[path] = th;
+                th.Start();
+                started = true;
+                g.Diag.Add($"{MiCol(path)} listening");
+            }
         }
+        // First time: give an awake mouse a moment to send its ~2 s heartbeat so the level appears immediately.
+        for (int i = 0; started && i < 25 && !HasFresh(key); i++) Thread.Sleep(100);
+
+        (int Level, bool Charging)? found = null;
+        lock (VendorLock)
+            if (LastVendor.TryGetValue(key, out var last) && DateTime.UtcNow - last.At < TimeSpan.FromHours(1)) found = (last.Level, last.Charging);
         if (found is not (int level, bool charging)) return;
         g.Level = level;
         g.Charging = charging;
         g.Wireless = true;
         if (g.Kind == DeviceKind.Unknown) g.Kind = DeviceKind.Mouse;
         if (GenericReceiverName.IsMatch(product.Trim()) && (g.Name.Length == 0 || GenericReceiverName.IsMatch(g.Name))) g.Name = "Attack Shark";
+    }
+
+    static bool HasFresh(string key)
+    {
+        lock (VendorLock) return LastVendor.ContainsKey(key);
+    }
+
+    static void Listen(string path, int reportLen, string key)
+    {
+        try
+        {
+            using var h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+            if (h.IsInvalid) { Log.Info($"Xenta {MiCol(path)}: open failed ({Marshal.GetLastWin32Error()})"); return; }
+            using var fs = new FileStream(h, FileAccess.Read, 0, isAsync: false);
+            var buf = new byte[Math.Max(reportLen, 8)];
+            bool logged = false;
+            while (true)
+            {
+                int n = fs.Read(buf, 0, reportLen); // blocks until the receiver sends something
+                if (n <= 0) break;
+                if (n < 5 || VendorBattery.ParseXenta(buf.AsSpan(0, n)) is not (int lvl, bool ch)) continue;
+                bool changed;
+                lock (VendorLock)
+                {
+                    changed = !LastVendor.TryGetValue(key, out var old) || old.Level != lvl || old.Charging != ch;
+                    LastVendor[key] = (lvl, ch, DateTime.UtcNow);
+                }
+                if (!logged) { Log.Info($"Xenta {key}: {lvl}%{(ch ? " charging" : "")} ({Convert.ToHexString(buf, 0, 5)})"); logged = true; }
+                if (changed) VendorChanged?.Invoke();
+            }
+        }
+        catch (Exception e) { Log.Info($"Xenta {MiCol(path)} stopped: {e.Message}"); } // receiver unplugged
+        finally { lock (VendorLock) Listeners.Remove(path); }
     }
 
     static string MiCol(string path)

@@ -67,6 +67,8 @@ public sealed class AppSettings
     public DateTime LastUpdateCheck { get; set; }
     public string? SkippedVersion { get; set; }
     public DateTime UpdateRemindedAt { get; set; }
+    /// <summary>«Что нового» of the version being installed, shown once after the restart.</summary>
+    public string? UpdateNotes { get; set; }
 
     public Dictionary<string, DeviceSettings> Devices { get; set; } = new();
 

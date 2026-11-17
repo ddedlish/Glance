@@ -341,13 +341,21 @@ internal sealed class InputForm : Form
         Controls.Add(ok);
         Controls.Add(cancel);
         HandleCreated += (_, _) => Native.DarkTitleBar(Handle, t.Dark);
-        Shown += (_, _) => { _box.Focus(); _box.SelectAll(); };
+        Shown += (_, _) => { Activate(); Native.SetForegroundWindow(Handle); _box.Focus(); _box.SelectAll(); };
     }
 
     public static string? Ask(string title, string label, string value)
     {
         using var f = new InputForm(title, label, value);
-        return f.ShowDialog() == DialogResult.OK ? f._box.Text.Trim() : null;
+        // No owner: ShowDialog() would otherwise attach the dialog to the active window — the tray panel,
+        // which closes a moment later and takes the dialog down with it.
+        return f.ShowDialog(NoOwner.Instance) == DialogResult.OK ? f._box.Text.Trim() : null;
+    }
+
+    sealed class NoOwner : IWin32Window
+    {
+        public static readonly NoOwner Instance = new();
+        public IntPtr Handle => IntPtr.Zero;
     }
 }
 
