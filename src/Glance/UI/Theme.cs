@@ -42,7 +42,9 @@ internal sealed class Theme
     public static readonly Color VividRed = Color.FromArgb(255, 69, 58);
     public static readonly Color VividCyan = Color.FromArgb(100, 210, 255);
     public Color Text => Dark ? Color.FromArgb(255, 255, 255) : Color.FromArgb(27, 27, 27);
-    public Color SubText => Dark ? Color.FromArgb(166, 166, 166) : Color.FromArgb(96, 96, 96);
+    public Color SubText => Glass
+        ? (Dark ? Color.FromArgb(206, 208, 216) : Color.FromArgb(62, 64, 72))
+        : (Dark ? Color.FromArgb(166, 166, 166) : Color.FromArgb(96, 96, 96));
     public Color Track => Dark ? Color.FromArgb(70, 70, 70) : Color.FromArgb(220, 220, 220);
     public Color Good => Dark ? Color.FromArgb(108, 203, 95) : Color.FromArgb(16, 124, 16);
     public Color Warn => Dark ? Color.FromArgb(252, 211, 77) : Color.FromArgb(157, 93, 0);
@@ -141,7 +143,7 @@ internal sealed class Theme
     }
 
     /// <summary>Tint laid over the blurred background: enough for legible text, still clearly transparent.</summary>
-    public Color GlassTint => Dark ? Color.FromArgb(118, 14, 16, 24) : Color.FromArgb(128, 248, 249, 252);
+    public Color GlassTint => Dark ? Color.FromArgb(178, 18, 20, 28) : Color.FromArgb(185, 246, 247, 250);
 
     public static Color Mix(Color a, Color b, float t) => Color.FromArgb(
         (int)(a.A + (b.A - a.A) * t), (int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
@@ -492,13 +494,15 @@ internal static class AlphaText
                 {
                     int cb = src[x], cg = src[x + 1], cr = src[x + 2];
                     if (darkText) { cb = 255 - cb; cg = 255 - cg; cr = 255 - cr; }
-                    int a = Math.Max(cr, Math.Max(cg, cb));
-                    if (a == 0) { row[x] = row[x + 1] = row[x + 2] = row[x + 3] = 0; continue; }
-                    // premultiplied: channel = colour × its own subpixel coverage (≤ alpha), scaled by text alpha
-                    row[x] = (byte)(c.B * cb * ca / 65025);
-                    row[x + 1] = (byte)(c.G * cg * ca / 65025);
-                    row[x + 2] = (byte)(c.R * cr * ca / 65025);
-                    row[x + 3] = (byte)(a * ca / 255);
+                    // Grayscale coverage from the hinted ClearType raster: GDI-sharp stems, no colour fringes
+                    // (subpixel colour cannot be composited correctly over an unknown, blurred background).
+                    int a = (cr + cg + cb + 1) / 3;
+                    if (a < 3) { row[x] = row[x + 1] = row[x + 2] = row[x + 3] = 0; continue; }
+                    a = a * ca / 255;
+                    row[x] = (byte)(c.B * a / 255);
+                    row[x + 1] = (byte)(c.G * a / 255);
+                    row[x + 2] = (byte)(c.R * a / 255);
+                    row[x + 3] = (byte)a;
                 }
                 System.Runtime.InteropServices.Marshal.Copy(row, 0, dd.Scan0 + y * dd.Stride, n);
             }
