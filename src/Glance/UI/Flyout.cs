@@ -145,7 +145,7 @@ internal sealed class FlyoutForm : CardForm
 
         // footer
         using (var pen = new Pen(t.Border, Math.Max(1, s))) g.DrawLine(pen, 0, y, W * s, y);
-        _btBtn = new RectangleF(Side * s, y + 10 * s, 150 * s, 36 * s);
+        _btBtn = new RectangleF(Side * s, y + 10 * s, 200 * s, 36 * s);
         _gearBtn = new RectangleF((W - Side - 36) * s, y + 10 * s, 36 * s, 36 * s);
         if (_hotBtn == "bt") Painter.FillRound(g, _btBtn, 6 * s, t.SurfaceHover);
         if (_hotBtn == "gear") Painter.FillRound(g, _gearBtn, 6 * s, t.SurfaceHover);

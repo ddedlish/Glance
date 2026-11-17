@@ -286,7 +286,7 @@ internal sealed class SettingRow : Control
     {
         _sc = scale; _title = title; _desc = desc; _right = right;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-        Height = (int)MathF.Round((desc.Length > 0 ? 66 : 52) * scale);
+        Height = (int)MathF.Round((desc.Length > 0 ? 76 : 52) * scale);
         if (right is not null) Controls.Add(right);
     }
 
@@ -319,7 +319,7 @@ internal sealed class SettingRow : Control
         if (_desc.Length > 0)
         {
             Painter.Text(g, _title, Fonts.Regular(14 * s), t.Text, new RectangleF(16 * s, 12 * s, textW, 22 * s));
-            Painter.Text(g, _desc, Fonts.Regular(12 * s), t.SubText, new RectangleF(16 * s, 34 * s, textW, 20 * s));
+            Painter.Text(g, _desc, Fonts.Regular(12 * s), t.SubText, new RectangleF(16 * s, 34 * s, textW, 34 * s), StringAlignment.Near, StringAlignment.Near, wrap: true);
         }
         else Painter.Text(g, _title, Fonts.Regular(14 * s), t.Text, new RectangleF(16 * s, 0, textW, Height));
     }
