@@ -21,6 +21,7 @@ internal static class Svc
     {
         if (!a.Connected) return $"Не подключено · {Fmt.Ago(a.LastSeen)}";
         if (a.Charging) return "Заряжается";
+        if (a.Level is null && !a.HasParts && a.ViaReceiver) return "Подключено · приёмник 2.4 ГГц";
         if (a.Level is null && !a.HasParts) return a.BudsPending ? "Подключено · получаем данные…" : "Подключено · нет данных о заряде";
         if (a.BudsPending) return "Подключено · ищем каждый наушник…";
         return "Подключено";
@@ -37,7 +38,9 @@ internal static class Svc
 
     public static string Tooltip(Accessory a)
     {
-        var s = $"{a.DisplayName} — {Fmt.Percent(a.Level)}";
+        var s = a.Level is null && !a.HasParts
+            ? $"{a.DisplayName} — подключено{(a.ViaReceiver ? " (2.4 ГГц)" : "")}"
+            : $"{a.DisplayName} — {Fmt.Percent(a.Level)}";
         if (a.Charging) s += " ⚡";
         if (a.HasParts)
         {

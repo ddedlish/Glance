@@ -94,10 +94,11 @@ internal sealed class AppHost : ApplicationContext
         _r.Changed += OnChanged;
         _r.ListChanged += () => { SyncTray(); _flyout?.Rebuild(); };
 
-        _poller.Result += (pnp, pads) =>
+        _poller.Result += (pnp, pads, rx) =>
         {
             _r.ApplyPnp(pnp);
             _r.ApplyGamepads(pads);
+            _r.ApplyReceivers(rx);
             foreach (var g in _gatt.Values) if (g.NeedsPolling) _ = g.ReadAsync();
         };
         if (_pads is not null) _pads.Changed += () => { _poller.ReadSoon(300); Ui.Post(RefreshPolling); };
@@ -114,6 +115,7 @@ internal sealed class AppHost : ApplicationContext
         };
         _tray.TaskbarRecreated += () => { _iconSig.Clear(); SyncTray(); };
         _tray.DisplayChanged += () => { _iconSig.Clear(); SyncTray(); };
+        _tray.DevicesChanged += () => _poller.ReadSoon(1500, 6000); // receiver plugged / unplugged
         _tray.Resumed += () => Ui.Delay(4000, () => { _bt.Start(); _poller.ReadSoon(500, 5000); });
         _tray.HotkeyPressed += () => { if (_flyout is not null) _flyout.CloseAnimated(); else OpenFlyout(null); };
 
@@ -325,7 +327,7 @@ internal sealed class AppHost : ApplicationContext
     {
         if (_exiting) return;
         var visible = _r.ConnectedDevices
-            .Where(a => (a.Level is not null || a.HasParts) && !_s.For(a.Key).HideInTray)
+            .Where(a => (a.Level is not null || a.HasParts || (_s.ShowUnknownInTray && IsAccessoryKind(a.Kind))) && !_s.For(a.Key).HideInTray)
             .OrderBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
@@ -380,6 +382,9 @@ internal sealed class AppHost : ApplicationContext
         }
     }
 
+    static bool IsAccessoryKind(DeviceKind k) => k is DeviceKind.Mouse or DeviceKind.Keyboard or DeviceKind.Gamepad or DeviceKind.Headset
+        or DeviceKind.Headphones or DeviceKind.Earbuds or DeviceKind.Neckband or DeviceKind.Speaker or DeviceKind.Pen;
+
     void WireIcon(TrayIcon icon)
     {
         icon.Clicked += _ =>
@@ -397,7 +402,7 @@ internal sealed class AppHost : ApplicationContext
         if (!_s.RichHover || _flyout is not null) return;
         HideHover();
         var list = icon.Key is SummaryKey or AppKey
-            ? _r.ConnectedDevices.Where(a => a.Level is not null || a.HasParts).OrderBy(a => a.DisplayName).Take(4).ToList()
+            ? _r.ConnectedDevices.Where(a => a.Level is not null || a.HasParts || IsAccessoryKind(a.Kind)).OrderBy(a => a.DisplayName).Take(4).ToList()
             : _r.Get(icon.Key) is Accessory a ? new List<Accessory> { a } : new List<Accessory>();
         _hover = new HoverCard(list, icon.GetRect());
         var h = _hover;

@@ -51,6 +51,8 @@ public sealed class Accessory
     public ulong ClassicAddress { get; set; }
     public ulong LeAddress { get; set; }
     public string? GamepadId { get; set; }
+    /// <summary>Connected through a 2.4 GHz USB receiver (not Bluetooth).</summary>
+    public bool ViaReceiver { get; set; }
     public Dictionary<string, bool> Endpoints { get; } = new(StringComparer.Ordinal);
 
     // Classification

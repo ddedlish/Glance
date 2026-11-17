@@ -24,6 +24,7 @@ public sealed class AppSettings
     public IconStyle IconStyle { get; set; } = IconStyle.Battery;
     public bool RichHover { get; set; } = true;
     public bool LiquidGlass { get; set; } = true;
+    public bool ShowUnknownInTray { get; set; } = true;
 
     // Notifications
     public bool ShowConnectPopup { get; set; } = true;

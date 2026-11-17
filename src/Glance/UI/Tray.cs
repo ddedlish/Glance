@@ -21,7 +21,8 @@ internal sealed class TrayHost : NativeWindow, IDisposable
     uint _nextId = 1;
     bool _hotkey;
 
-    public event Action? TaskbarRecreated, ThemeChanged, Resumed, HotkeyPressed, DisplayChanged;
+    public event Action? TaskbarRecreated, ThemeChanged, Resumed, HotkeyPressed, DisplayChanged, DevicesChanged;
+    long _lastDevChange;
 
     public TrayHost()
     {
@@ -88,6 +89,10 @@ internal sealed class TrayHost : NativeWindow, IDisposable
             case WM_DISPLAYCHANGE:
             case WM_DPICHANGED:
                 DisplayChanged?.Invoke();
+                break;
+            case 0x0219: // WM_DEVICECHANGE (DBT_DEVNODES_CHANGED arrives in bursts – coalesce)
+                long now = Environment.TickCount64;
+                if (now - _lastDevChange > 1000) { _lastDevChange = now; DevicesChanged?.Invoke(); }
                 break;
         }
         base.WndProc(ref m);

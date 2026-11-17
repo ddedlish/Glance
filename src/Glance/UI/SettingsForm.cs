@@ -131,6 +131,7 @@ internal sealed class SettingsForm : Form
             _s.TrayMode == TrayMode.PerDevice ? 0 : 1, i => _s.TrayMode = i == 0 ? TrayMode.PerDevice : TrayMode.Single));
         Row("Вид значка", "Батарея разряжается вместе с устройством", Seg(new[] { "Батарея", "Проценты", "Батарея + %" },
             (int)_s.IconStyle, i => _s.IconStyle = (IconStyle)i));
+        Row("Устройства без данных о заряде", "Показывать значок «?» для мышей и клавиатур на приёмниках 2.4 ГГц", Toggle(_s.ShowUnknownInTray, v => _s.ShowUnknownInTray = v));
         Row("Карточка при наведении", "Заряд каждого наушника и кейса вместо обычной подсказки", Toggle(_s.RichHover, v => _s.RichHover = v));
 
         // ── Уведомления ──

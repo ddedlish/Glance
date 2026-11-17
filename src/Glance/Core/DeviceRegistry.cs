@@ -10,6 +10,8 @@ internal sealed class DeviceRegistry
     readonly Dictionary<string, Accessory> _map = new(StringComparer.Ordinal);
     readonly Dictionary<string, string> _aepToKey = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> _padMisses = new(StringComparer.Ordinal);
+    readonly Dictionary<string, int> _rxMisses = new(StringComparer.Ordinal);
+    bool _padsSeen, _rxSeen;
     readonly AppSettings _settings;
     readonly HistoryStore _history;
 
@@ -41,6 +43,7 @@ internal sealed class DeviceRegistry
                 KindHint = d.Kind,
                 LastLevel = d.LastLevel,
                 LastSeen = d.LastSeen,
+                ViaReceiver = key.StartsWith("RX:", StringComparison.Ordinal),
             };
             a.Profile = Profiles.Match(a.Name, a.KindHint);
             _map[key] = a;
@@ -114,7 +117,7 @@ internal sealed class DeviceRegistry
     /// <summary>After both watchers enumerated: drop remembered devices that are no longer paired.</summary>
     public void PruneUnpaired()
     {
-        var stale = _map.Values.Where(a => a.Key.StartsWith("BT:", StringComparison.Ordinal) && a.Endpoints.Count == 0).Select(a => a.Key).ToList();
+        var stale = _map.Values.Where(a => a.Key.StartsWith("BT:", StringComparison.Ordinal) && a.Endpoints.Count == 0 && !a.Connected).Select(a => a.Key).ToList();
         foreach (var k in stale)
         {
             _map.Remove(k);
@@ -242,11 +245,12 @@ internal sealed class DeviceRegistry
             {
                 a.Connected = true; a.ConnectedAt = a.LastSeen = DateTime.Now; a.SessionStartPending = true;
                 Bump(a);
-                DeviceConnected?.Invoke(a, false);
+                DeviceConnected?.Invoke(a, !_padsSeen); // already plugged in at startup → no popup
                 ListChanged?.Invoke();
             }
             SetSystem(a, p.Level, p.Charging, "Gamepad", 2);
         }
+        _padsSeen = true;
 
         foreach (var k in seen) _padMisses.Remove(k);
         foreach (var a in _map.Values.Where(x => x.Key.StartsWith("GP:") && x.Connected && !seen.Contains(x.Key)).ToList())
@@ -256,6 +260,45 @@ internal sealed class DeviceRegistry
             _padMisses[a.Key] = miss;
             if (miss < 2) continue;
             _padMisses.Remove(a.Key);
+            MarkDisconnected(a);
+            ListChanged?.Invoke();
+        }
+    }
+
+    /// <summary>2.4 GHz receivers: listed as connected while the receiver is plugged in; battery when the device reports it.</summary>
+    public void ApplyReceivers(List<ReceiverReading> list)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var r in list)
+        {
+            if (!_map.TryGetValue(r.Id, out var a))
+            {
+                a = new Accessory(r.Id) { Name = r.Name, KindHint = r.Kind, ViaReceiver = true };
+                var ds = _settings.For(r.Id);
+                a.CustomName = ds.CustomName;
+                a.LastLevel = ds.LastLevel;
+                a.Profile = Profiles.Match(r.Name, r.Kind) with { Buds = BudsSource.None };
+                if (a.Profile.Kind == DeviceKind.Unknown) a.Profile = a.Profile with { Kind = r.Kind };
+                _map[r.Id] = a;
+            }
+            seen.Add(r.Id);
+            _rxMisses.Remove(r.Id);
+            if (!a.Connected)
+            {
+                a.Connected = true; a.ConnectedAt = a.LastSeen = DateTime.Now; a.SessionStartPending = true;
+                Bump(a);
+                DeviceConnected?.Invoke(a, !_rxSeen);
+                ListChanged?.Invoke();
+            }
+            if (r.Level is int lv) SetSystem(a, lv, r.Charging, "Receiver", 2);
+        }
+        _rxSeen = true;
+        foreach (var a in _map.Values.Where(x => x.Key.StartsWith("RX:") && x.Connected && !seen.Contains(x.Key)).ToList())
+        {
+            int miss = _rxMisses.TryGetValue(a.Key, out var m) ? m + 1 : 1;
+            _rxMisses[a.Key] = miss;
+            if (miss < 2) continue;
+            _rxMisses.Remove(a.Key);
             MarkDisconnected(a);
             ListChanged?.Invoke();
         }

@@ -69,7 +69,7 @@ internal sealed class BatteryPoller : IDisposable
     int _busy;
     bool _disposed;
 
-    public event Action<Dictionary<ulong, int>, List<GamepadReading>>? Result; // UI thread
+    public event Action<Dictionary<ulong, int>, List<GamepadReading>, List<ReceiverReading>>? Result; // UI thread
 
     public BatteryPoller(GamepadProvider? pads)
     {
@@ -97,7 +97,9 @@ internal sealed class BatteryPoller : IDisposable
         {
             var pnp = PnpBattery.ReadAll();
             var pads = _pads?.Read() ?? SafeHid();
-            Ui.Post(() => { if (!_disposed) Result?.Invoke(pnp, pads); });
+            List<ReceiverReading> rx;
+            try { rx = HidReceivers.Read(); } catch (Exception e) { Log.Info($"Receivers: {e.Message}"); rx = new List<ReceiverReading>(); }
+            Ui.Post(() => { if (!_disposed) Result?.Invoke(pnp, pads, rx); });
         }
         catch (Exception e) { Log.Error("Poll", e); }
         finally { Volatile.Write(ref _busy, 0); }
