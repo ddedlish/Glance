@@ -17,7 +17,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
 
-    <Version>2.4.3</Version>
+    <Version>2.4.4</Version>
     <Product>Glance</Product>
     <Authors>ddedlish</Authors>
     <AssemblyTitle>Glance — заряд аксессуаров · by ddedlish</AssemblyTitle>

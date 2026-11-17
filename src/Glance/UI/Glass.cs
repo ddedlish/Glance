@@ -278,29 +278,36 @@ internal sealed class GlassScroller : GlassPanel
     int _target;
     Animator.Anim? _anim;
 
-    const int WM_SETREDRAW = 0x000B;
-    const uint RDW_INVALIDATE = 0x1, RDW_ALLCHILDREN = 0x80, RDW_UPDATENOW = 0x100, RDW_FRAME = 0x400;
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr SendMessageW(IntPtr h, int msg, IntPtr w, IntPtr l);
+    const uint SW_SCROLLCHILDREN = 0x1, SW_INVALIDATE = 0x2;
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int ScrollWindowEx(IntPtr h, int dx, int dy, ref Native.RECT scroll, ref Native.RECT clip, IntPtr rgn, IntPtr update, uint flags);
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr h, IntPtr rect, IntPtr rgn, uint flags);
 
     /// <summary>
-    /// Moves the content with redraw frozen, then repaints the whole viewport in one go: every row appears at its
-    /// new place in the same frame — no torn strips while scrolling.
+    /// Hardware-style scrolling: the already drawn pixels (with their alpha) are shifted by the window manager and
+    /// only the strip that comes into view is painted, synchronously, in the same frame. Smooth at 60 fps and
+    /// cheap, instead of repainting every row on every step.
     /// </summary>
     void Apply(int v)
     {
         v = Math.Clamp(v, 0, Max);
+        int old = _offset;
         _offset = v;
-        if (Content.Top != -v)
+        if (Content.Top != -v || old != v)
         {
-            if (IsHandleCreated)
+            if (IsHandleCreated && Content.IsHandleCreated && Math.Abs(v - old) < ClientSize.Height)
             {
-                SendMessageW(Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
-                Content.Top = -v;
-                SendMessageW(Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
-                RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME);
+                int barW = _bar?.Width ?? 0;
+                var rc = new Native.RECT { Left = 0, Top = 0, Right = ClientSize.Width - barW, Bottom = ClientSize.Height };
+                var clip = rc;
+                ScrollWindowEx(Handle, 0, old - v, ref rc, ref clip, IntPtr.Zero, IntPtr.Zero, SW_SCROLLCHILDREN | SW_INVALIDATE);
+                if (Content.Top != -v) Content.Top = -v; // keep WinForms' idea of the position in sync (no visual move)
+                RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, 0x100 /*RDW_UPDATENOW*/ | 0x80 /*RDW_ALLCHILDREN*/); // paint just the exposed strip
             }
-            else Content.Top = -v;
+            else
+            {
+                Content.Top = -v;
+                Invalidate(true);
+            }
         }
         if (_bar is null) return;
         _bar.Visible = Max > 0;

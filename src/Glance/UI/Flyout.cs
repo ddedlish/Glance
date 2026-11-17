@@ -11,7 +11,8 @@ internal sealed class FlyoutForm : CardForm
     RectangleF _btBtn, _gearBtn, _bannerRect;
     int _hot = -1;
     string _hotBtn = "";
-    float _scroll, _contentH, _viewH;
+    float _scroll, _contentH, _viewH, _scrollTarget;
+    Animator.Anim? _scrollAnim;
     bool _closing;
 
     public string? PendingUpdate { get; set; }
@@ -255,8 +256,12 @@ internal sealed class FlyoutForm : CardForm
     {
         base.OnMouseWheel(e);
         if (_contentH <= _viewH) return;
-        _scroll = Math.Clamp(_scroll - e.Delta / 120f * 48, 0, _contentH - _viewH);
-        Invalidate();
+        // Smooth: ease towards an accumulating target instead of jumping 48 px per notch.
+        float from = _scroll;
+        _scrollTarget = Math.Clamp((_scrollAnim is null ? _scroll : _scrollTarget) - e.Delta / 120f * 56, 0, _contentH - _viewH);
+        float to = _scrollTarget;
+        _scrollAnim?.Cancel();
+        _scrollAnim = Animator.Run(200, p => { if (IsDisposed) return; _scroll = from + (to - from) * p; Invalidate(); }, () => _scrollAnim = null);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
