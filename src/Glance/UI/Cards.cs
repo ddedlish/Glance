@@ -59,8 +59,19 @@ internal static class DeviceCard
     {
         float h = 66;
         if (a.Connected && a.HasParts) h += 34;
-        if (detailed && a.Connected && Svc.H.Get(a.Key).Count >= 2) h += 30;
+        if (detailed && HasHistory(a)) h += 30;
         return h;
+    }
+
+    /// <summary>At least an hour of samples with some movement, otherwise the sparkline is just noise.</summary>
+    static bool HasHistory(Accessory a)
+    {
+        if (!a.Connected) return false;
+        var h = Svc.H.Get(a.Key);
+        if (h.Count < 3) return false;
+        long span = h[^1].T - h[0].T;
+        int min = h.Min(x => x.L), max = h.Max(x => x.L);
+        return span >= 3600 && max - min >= 3;
     }
 
     public static void Draw(Graphics g, RectangleF r, Accessory a, float s, bool hot, bool detailed)
@@ -84,7 +95,7 @@ internal static class DeviceCard
         int? lvl = a.Connected ? a.Level : a.LastLevel;
         var pctFont = Fonts.Big(18 * s);
         string pct = Fmt.Percent(lvl);
-        float pw = Math.Max(48 * s, Painter.Width(g, pct, pctFont) + 4 * s);
+        float pw = Math.Max(58 * s, Painter.Width(g, "100%", pctFont) + 14 * s);
         var pctColor = dim ? t.SubText : t.LevelColor(lvl, a.Charging, Svc.Low);
         Painter.Text(g, pct, pctFont, pctColor, new RectangleF(right - pw, r.Y + 11 * s, pw, 26 * s), StringAlignment.Far);
         if (a.Charging && !dim)
@@ -131,13 +142,12 @@ internal static class DeviceCard
         }
 
         // history row: 24h sparkline + estimate
-        if (detailed && a.Connected)
+        if (detailed && HasHistory(a))
         {
             var hist = Svc.H.Get(a.Key);
-            if (hist.Count >= 2)
             {
                 var est = Svc.Estimate(a);
-                string estText = est is TimeSpan e ? (a.Charging ? $"до 100% ≈ {Fmt.Duration(e)}" : $"хватит ≈ на {Fmt.Duration(e)}") : "24 ч";
+                string estText = est is TimeSpan e ? (a.Charging ? $"до 100% ≈ {Fmt.Duration(e)}" : $"хватит ≈ на {Fmt.Duration(e)}") : "за сутки";
                 var ef = Fonts.Regular(11.5f * s);
                 float ew = Painter.Width(g, estText, ef) + 6 * s;
                 Painter.Sparkline(g, new RectangleF(x0, y, right - x0 - ew - 10 * s, 18 * s), hist, t.AccentText, s);
