@@ -247,16 +247,16 @@ internal sealed class AppHost : ApplicationContext
 
     void TryPopup(Accessory a, DateTime since, int attempt)
     {
-        if (!a.Connected || a.ConnectedAt != since || a.Wired) return; // a cable needs no battery popup
+        if (!a.Connected || a.ConnectedAt != since) return;
         bool hasData = a.Level is not null;
         if (!hasData && attempt < 3)
         {
             Ui.Delay(1200, () => TryPopup(a, since, attempt + 1));
             return;
         }
-        if (!hasData && a.Kind is DeviceKind.Unknown or DeviceKind.Phone) return; // nothing useful to show
+        // Every connection is announced (USB, 2.4 GHz and Bluetooth alike, with or without battery data).
+        // The window is silent and never takes focus, so quiet hours don't hide it; only fullscreen games do.
         if (_s.RespectFocus && Native.UserIsBusy()) return;
-        if (_s.IsQuietNow()) return;
         _lastPopup[a.Key] = DateTime.Now;
         _toasts.ShowDevice(a, ToastKind.Connected);
     }

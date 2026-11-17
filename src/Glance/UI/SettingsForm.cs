@@ -160,7 +160,7 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
 
         // ── Уведомления ──
         Section("Уведомления");
-        Row("Окно при подключении", "Показывает заряд сразу после подключения аксессуара", Toggle(_s.ShowConnectPopup, v => _s.ShowConnectPopup = v));
+        Row("Окно при подключении", "Уведомление при каждом подключении: Bluetooth, 2.4 ГГц и USB", Toggle(_s.ShowConnectPopup, v => _s.ShowConnectPopup = v));
         var dur = new Stepper(sc, _s.PopupSeconds, 3, 15, 1, v => $"{v} с");
         dur.ValueChanged += () => { _s.PopupSeconds = dur.Value; _s.NotifyChanged(); };
         Row("Время показа окна", "", dur);
@@ -178,7 +178,7 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         qFrom.ValueChanged += () => { _s.QuietFrom = qFrom.Value; _s.NotifyChanged(); };
         var qTo = new Stepper(sc, _s.QuietTo, 0, 23, 1, v => $"до {v:00}:00");
         qTo.ValueChanged += () => { _s.QuietTo = qTo.Value; _s.NotifyChanged(); };
-        Row("Тихие часы", "Ночью молчат окна о подключении, низком и полном заряде. Критический — нет", Toggle(_s.QuietHours, v => _s.QuietHours = v));
+        Row("Тихие часы", "Ночью молчат окна о низком и полном заряде. Подключения и критический заряд — показываются", Toggle(_s.QuietHours, v => _s.QuietHours = v));
         Row("Начало тихих часов", "", qFrom);
         Row("Конец тихих часов", "", qTo);
         Row("Не беспокоить", "Обычные окна молчат в играх и при «Не беспокоить» (критический баннер — нет)", Toggle(_s.RespectFocus, v => _s.RespectFocus = v));
@@ -222,7 +222,7 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         Section("Обновления");
         if (AppInfo.UpdatesConfigured)
         {
-            Row("Проверять обновления", "Раз в сутки, только GitHub Releases этого проекта", Toggle(_s.CheckUpdates, v => _s.CheckUpdates = v));
+            Row("Проверять обновления", "Каждые 30 минут, только GitHub Releases этого проекта", Toggle(_s.CheckUpdates, v => _s.CheckUpdates = v));
             Row("Устанавливать автоматически", "Файл проверяется по SHA-256 перед заменой", Toggle(_s.AutoInstallUpdates, v => _s.AutoInstallUpdates = v));
             string? pending = PendingUpdate();
             var btn = new FlatButton(sc, pending is null ? "Проверить сейчас" : $"Обновить до {pending}", primary: true);

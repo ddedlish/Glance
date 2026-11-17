@@ -282,9 +282,10 @@ internal sealed class DeviceRegistry
                 if (a.Profile.Kind == DeviceKind.Unknown) a.Profile = a.Profile with { Kind = r.Kind };
                 _map[r.Id] = a;
             }
-            if (a.Name != r.Name && r.Name.Length > 0)
+            if ((a.Name != r.Name && r.Name.Length > 0) || (r.Kind != DeviceKind.Unknown && a.KindHint != r.Kind))
             {
-                a.Name = r.Name; // e.g. «2.4G Wireless Device» → «Attack Shark» once the vendor battery is recognised
+                a.KindHint = r.Kind; // e.g. a mouse receiver first seen as «keyboard» by an older version
+                if (r.Name.Length > 0) a.Name = r.Name; // e.g. «2.4G Wireless Device» → «Attack Shark» once the vendor battery is recognised
                 a.Profile = Profiles.Match(r.Name, r.Kind) with { Buds = BudsSource.None };
                 if (a.Profile.Kind == DeviceKind.Unknown) a.Profile = a.Profile with { Kind = r.Kind };
                 ListChanged?.Invoke();

@@ -128,6 +128,9 @@ internal sealed class ToastForm : CardForm
         return count > 0;
     }
 
+    /// <summary>Connected without any battery data (USB keyboard, sleeping 2.4 GHz mouse): compact card, no «—» gauge.</summary>
+    bool NoData() => Device is Accessory d && d.Level is null && !d.HasParts && d.Kind != DeviceKind.Earbuds;
+
     string? Footer()
     {
         if (Device is not Accessory a) return null;
@@ -151,13 +154,13 @@ internal sealed class ToastForm : CardForm
             using (holder)
             {
                 var sz = g.MeasureString(_text, Fonts.Regular(13 * Sc), (int)(Px(360) - Px(32)));
-                h = 16 + 22 + 4 + Math.Min(sz.Height / Sc, 60) + 16;
+                h = 16 + 22 + 4 + Math.Min(sz.Height / Sc, 90) + 16;
                 if (_action is not null) h += 48;
             }
         }
         else
         {
-            h += RingLayout(out _) ? 96 : 46;
+            h += RingLayout(out _) ? 96 : NoData() ? 0 : 46;
             if (Footer() is not null) h += 26;
             h += 12;
         }
@@ -221,7 +224,7 @@ internal sealed class ToastForm : CardForm
         {
             ToastKind.Low => $"Низкий заряд · {Fmt.Percent(a.WeakestLevel)}",
             ToastKind.Charged => "Полностью заряжено",
-            _ => a.Connected ? "Подключено" : "Отключено",
+            _ => a.Connected ? $"Подключено · {a.Link}" : "Отключено",
         };
         var feat = Svc.Subtitle(a);
         if (feat.Length > 0 && Kind == ToastKind.Connected) kicker += " · " + feat;
@@ -257,7 +260,7 @@ internal sealed class ToastForm : CardForm
             }
             y += 96 * s;
         }
-        else
+        else if (!NoData())
         {
             int? lvl = a.Level;
             int? shown = lvl is int x ? (int)Math.Round(x * _grow) : null;
