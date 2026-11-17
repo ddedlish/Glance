@@ -238,6 +238,13 @@ internal sealed class GlassScroller : GlassPanel
     readonly Indicator? _bar; // null while the base constructor adds Content (Controls.Add runs a layout pass)
     int _offset;
 
+    // Composited: Windows paints the whole subtree into one back buffer and shows it at once —
+    // rows can never appear one by one while scrolling.
+    protected override CreateParams CreateParams
+    {
+        get { var cp = base.CreateParams; cp.ExStyle |= 0x02000000 /*WS_EX_COMPOSITED*/; return cp; }
+    }
+
     public GlassScroller()
     {
         Controls.Add(Content);

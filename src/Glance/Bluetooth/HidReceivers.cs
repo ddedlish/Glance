@@ -247,15 +247,18 @@ internal static class HidReceivers
     {
         try
         {
-            using var h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+            // Overlapped handle + async reads: the same path that is proven to receive the receiver's frames.
+            using var h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0x40000000 /*OVERLAPPED*/, IntPtr.Zero);
             if (h.IsInvalid) { Log.Info($"Xenta {MiCol(path)}: open failed ({Marshal.GetLastWin32Error()})"); return; }
-            using var fs = new FileStream(h, FileAccess.Read, 0, isAsync: false);
+            using var fs = new FileStream(h, FileAccess.Read, 0, isAsync: true);
+            int frames = 0;
             var buf = new byte[Math.Max(reportLen, 8)];
             bool logged = false;
             while (true)
             {
-                int n = fs.Read(buf, 0, reportLen); // blocks until the receiver sends something
+                int n = fs.ReadAsync(buf, 0, reportLen).GetAwaiter().GetResult(); // waits (no CPU) for the next report
                 if (n <= 0) break;
+                if (++frames <= 3) Log.Info($"Xenta {MiCol(path)} rx {Convert.ToHexString(buf, 0, Math.Min(n, 8))}");
                 if (n < 5 || VendorBattery.ParseXenta(buf.AsSpan(0, n)) is not (int lvl, bool ch)) continue;
                 bool changed;
                 lock (VendorLock)
