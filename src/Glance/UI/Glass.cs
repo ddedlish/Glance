@@ -262,6 +262,15 @@ internal sealed class GlassScroller : GlassPanel
         _anim = null;
         _target = Math.Clamp(y, 0, Max);
         Apply(_target);
+        Settle();
+    }
+
+    /// <summary>Final full repaint of the viewport once motion stops — guarantees a perfect picture.</summary>
+    void Settle()
+    {
+        if (!IsHandleCreated || IsDisposed) return;
+        var all = new Native.RECT { Left = 0, Top = 0, Right = ClientSize.Width, Bottom = ClientSize.Height };
+        RedrawWindow(Handle, ref all, IntPtr.Zero, 0x1 | 0x80 | 0x100);
     }
 
     /// <summary>Smooth wheel scrolling: eases towards an accumulating target (~60 fps, 220 ms).</summary>
@@ -272,15 +281,15 @@ internal sealed class GlassScroller : GlassPanel
         int to = _target;
         _anim?.Cancel();
         if (to == from) { _anim = null; return; }
-        _anim = Animator.Run(220, p => { if (!IsDisposed) Apply(from + (int)MathF.Round((to - from) * p)); }, () => _anim = null);
+        _anim = Animator.Run(220, p => { if (!IsDisposed) Apply(from + (int)MathF.Round((to - from) * p)); }, () => { _anim = null; Settle(); });
     }
 
     int _target;
     Animator.Anim? _anim;
 
-    const uint SW_SCROLLCHILDREN = 0x1, SW_INVALIDATE = 0x2;
+    const uint SW_SCROLLCHILDREN = 0x1;
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int ScrollWindowEx(IntPtr h, int dx, int dy, ref Native.RECT scroll, ref Native.RECT clip, IntPtr rgn, IntPtr update, uint flags);
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr h, IntPtr rect, IntPtr rgn, uint flags);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr h, ref Native.RECT rect, IntPtr rgn, uint flags);
 
     /// <summary>
     /// Hardware-style scrolling: the already drawn pixels (with their alpha) are shifted by the window manager and
@@ -299,9 +308,15 @@ internal sealed class GlassScroller : GlassPanel
                 int barW = _bar?.Width ?? 0;
                 var rc = new Native.RECT { Left = 0, Top = 0, Right = ClientSize.Width - barW, Bottom = ClientSize.Height };
                 var clip = rc;
-                ScrollWindowEx(Handle, 0, old - v, ref rc, ref clip, IntPtr.Zero, IntPtr.Zero, SW_SCROLLCHILDREN | SW_INVALIDATE);
+                int d = v - old; // > 0: content moves up, a strip appears at the bottom
+                ScrollWindowEx(Handle, 0, -d, ref rc, ref clip, IntPtr.Zero, IntPtr.Zero, SW_SCROLLCHILDREN);
                 if (Content.Top != -v) Content.Top = -v; // keep WinForms' idea of the position in sync (no visual move)
-                RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, 0x100 /*RDW_UPDATENOW*/ | 0x80 /*RDW_ALLCHILDREN*/); // paint just the exposed strip
+                // The uncovered strip belongs to the content and its rows (child windows): invalidate it in all of
+                // them explicitly and paint it now, in the same frame.
+                var strip = d > 0
+                    ? new Native.RECT { Left = 0, Top = ClientSize.Height - d, Right = rc.Right, Bottom = ClientSize.Height }
+                    : new Native.RECT { Left = 0, Top = 0, Right = rc.Right, Bottom = -d };
+                RedrawWindow(Handle, ref strip, IntPtr.Zero, 0x1 /*RDW_INVALIDATE*/ | 0x80 /*RDW_ALLCHILDREN*/ | 0x100 /*RDW_UPDATENOW*/);
             }
             else
             {
