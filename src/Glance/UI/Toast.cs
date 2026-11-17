@@ -134,6 +134,7 @@ internal sealed class ToastForm : CardForm
         if (!a.Connected) return "Устройство отключено";
         if (Svc.Estimate(a) is TimeSpan e) return a.Charging ? $"До полного заряда примерно {Fmt.Duration(e)}" : $"Хватит примерно на {Fmt.Duration(e)}";
         if (a.BudsPending) return "Получаем заряд каждого наушника…";
+        if (a.Wired) return "Подключено по USB-кабелю";
         if (a.ViaReceiver && a.Level is null) return "Через приёмник 2.4 ГГц · устройство не передаёт заряд";
         if (a.Profile.Buds != BudsSource.None && !a.HasParts && Svc.S.BudsDetail && a.Kind == DeviceKind.Earbuds)
             return "Модель не передаёт заряд каждого наушника — показан общий";

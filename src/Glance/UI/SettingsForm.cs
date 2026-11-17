@@ -57,6 +57,8 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
 
     int Px(float dp) => (int)MathF.Round(dp * _sc);
 
+    static string Lines(int n) => (n % 10 == 1 && n % 100 != 11) ? "строка" : (n % 10 is >= 2 and <= 4 && (n % 100 < 12 || n % 100 > 14)) ? "строки" : "строк";
+
     void OnTheme()
     {
         // Deferred: the change may come from one of this form's own controls, which Build() disposes.
@@ -150,8 +152,9 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         Section("Значки в трее");
         Row("Значки", "Отдельный для каждого устройства или один общий", Seg(new[] { "Для каждого", "Один общий" },
             _s.TrayMode == TrayMode.PerDevice ? 0 : 1, i => _s.TrayMode = i == 0 ? TrayMode.PerDevice : TrayMode.Single));
-        Row("Вид значка", "Батарея разряжается вместе с устройством", Seg(new[] { "Батарея", "Проценты", "Батарея + %" },
-            (int)_s.IconStyle, i => _s.IconStyle = (IconStyle)i));
+        IconStyle[] styles = { IconStyle.Device, IconStyle.Battery, IconStyle.Number, IconStyle.BatteryNumber };
+        Row("Вид значка", "Устройство — мышь, клавиатура, наушники с полосой заряда", Seg(new[] { "Устройство", "Батарея", "%", "Батарея + %" },
+            Math.Max(0, Array.IndexOf(styles, _s.IconStyle)), i => _s.IconStyle = styles[i]));
         Row("Устройства без данных о заряде", "Показывать значок «?» для мышей и клавиатур на приёмниках 2.4 ГГц", Toggle(_s.ShowUnknownInTray, v => _s.ShowUnknownInTray = v));
         Row("Карточка при наведении", "Заряд каждого наушника и кейса вместо обычной подсказки", Toggle(_s.RichHover, v => _s.RichHover = v));
 
@@ -179,6 +182,26 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         Row("Начало тихих часов", "", qFrom);
         Row("Конец тихих часов", "", qTo);
         Row("Не беспокоить", "Обычные окна молчат в играх и при «Не беспокоить» (критический баннер — нет)", Toggle(_s.RespectFocus, v => _s.RespectFocus = v));
+
+        // ── Мышь и клавиатура (системные параметры Windows, применяются сразу) ──
+        Section("Мышь и клавиатура");
+        var inp = SystemInput.Read();
+        var ptr = new Stepper(sc, inp.PointerSpeed, 1, 20, 1, v => $"{v} из 20");
+        ptr.ValueChanged += () => SystemInput.SetPointerSpeed(ptr.Value);
+        Row("Чувствительность мыши", "Скорость указателя Windows (10 — по умолчанию). Действует сразу на все мыши", ptr);
+        Row("Повышенная точность указателя", "Ускорение: быстрое движение уводит курсор дальше. В играх обычно выключают", Toggle(inp.EnhancePrecision, v => SystemInput.SetEnhancePrecision(v)));
+        var wheel = new Stepper(sc, inp.WheelLines, 1, 20, 1, v => $"{v} {Lines(v)}");
+        wheel.ValueChanged += () => SystemInput.SetWheelLines(wheel.Value);
+        Row("Прокрутка колёсиком", "", wheel);
+        var delay = new Stepper(sc, inp.KeyDelay, 0, 3, 1, v => $"{(v + 1) * 250} мс");
+        delay.ValueChanged += () => SystemInput.SetKeyDelay(delay.Value);
+        Row("Задержка перед повтором клавиши", "Сколько держать клавишу, прежде чем символ начнёт повторяться", delay);
+        var rate = new Stepper(sc, inp.KeyRate, 0, 31, 1, v => $"{SystemInput.RateToCps(v):0} в сек");
+        rate.ValueChanged += () => SystemInput.SetKeyRate(rate.Value);
+        Row("Скорость повтора клавиши", "Отклик удерживаемой клавиши: сколько символов в секунду", rate);
+        var reset = new FlatButton(sc, "Сбросить");
+        reset.Click += (_, _) => { SystemInput.ResetDefaults(); Ui.Post(Build); };
+        Row("Стандартные значения Windows", "Скорость 10, точность включена, 3 строки, 500 мс, 30 в сек", reset);
 
         // ── Наушники ──
         Section("Наушники");

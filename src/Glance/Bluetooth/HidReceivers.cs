@@ -4,7 +4,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Glance;
 
-public sealed record ReceiverReading(string Id, string Name, DeviceKind Kind, int? Level, bool Charging);
+public sealed record ReceiverReading(string Id, string Name, DeviceKind Kind, int? Level, bool Charging, bool Wired = false);
 
 /// <summary>
 /// Wireless mice / keyboards / headsets on 2.4 GHz USB receivers ("2.4G Wireless Device", Unifying, Bolt,
@@ -65,7 +65,11 @@ internal static class HidReceivers
         public bool Wireless;
         public int? Level;
         public bool Charging;
+        public bool Xenta;
+        public readonly List<string> Diag = new();
     }
+
+    static readonly HashSet<string> Logged = new();
 
     public static List<ReceiverReading> Read()
     {
@@ -83,14 +87,22 @@ internal static class HidReceivers
                 // Bluetooth HID (classic {00001124…} / LE) is handled by the Bluetooth providers.
                 if (path.Contains("{00001124", StringComparison.OrdinalIgnoreCase) || path.Contains("bthledevice", StringComparison.OrdinalIgnoreCase)
                     || path.Contains("_vid&0002", StringComparison.OrdinalIgnoreCase)) continue;
+                // USB only (touchpads / I2C keyboards of laptops have no "vid_" in the path)
+                if (!path.Contains("hid#vid_", StringComparison.OrdinalIgnoreCase)) continue;
                 try { Inspect(path, groups); }
                 catch (Exception e) { Log.Info($"HID receiver: {e.Message}"); }
             }
         }
         finally { SetupDiDestroyDeviceInfoList(set); }
 
-        return groups.Where(g => g.Value.Wireless && g.Value.Kind is DeviceKind.Mouse or DeviceKind.Keyboard or DeviceKind.Headset or DeviceKind.Gamepad)
-            .Select(g => new ReceiverReading("RX:" + g.Key, g.Value.Name, g.Value.Kind, g.Value.Level, g.Value.Charging))
+        foreach (var (key, g) in groups)
+            if (g.Diag.Count > 0 && Logged.Add(key + g.Level))
+                Log.Info($"HID {key} «{g.Name}» {g.Kind} {(g.Wireless ? "wireless" : "wired")} level={g.Level?.ToString() ?? "—"}: {string.Join("; ", g.Diag)}");
+
+        // Wireless (receiver) and wired USB mice/keyboards; wired ones are listed as «USB», never as 2.4 GHz.
+        return groups.Where(g => g.Value.Kind is DeviceKind.Mouse or DeviceKind.Keyboard or DeviceKind.Headset or DeviceKind.Gamepad
+                                 && (g.Value.Wireless || g.Value.Kind is DeviceKind.Mouse or DeviceKind.Keyboard))
+            .Select(g => new ReceiverReading("RX:" + g.Key, g.Value.Name, g.Value.Kind, g.Value.Level, g.Value.Charging, Wired: !g.Value.Wireless))
             .ToList();
     }
 
@@ -106,23 +118,31 @@ internal static class HidReceivers
         string key = $"{attr.VendorID:X4}:{attr.ProductID:X4}:{serial}";
         if (!groups.TryGetValue(key, out var g)) groups[key] = g = new Group();
         if (product.Length > 0 && (g.Name.Length == 0 || product.Length < g.Name.Length)) g.Name = product;
-        if (WirelessName.IsMatch(product)) g.Wireless = true;
+        // The receiver itself is named «2.4G…», «…Receiver», «…Dongle». A wired keyboard's secondary collection
+        // with a stray word in its name must not make it «2.4 GHz»: judge by the primary (shortest) name.
+        g.Wireless = WirelessName.IsMatch(g.Name) || g.Level is not null && g.Wireless || g.Xenta;
+        if (attr.VendorID == XentaVid) { g.Xenta = true; g.Wireless = true; }
         if (attr.VendorID == 0x046D && product.Contains("Receiver", StringComparison.OrdinalIgnoreCase)) g.Wireless = true; // Logitech
 
         if (!HidD_GetPreparsedData(q, out var pp)) return;
         try
         {
             if (HidP_GetCaps(pp, out var caps) != HIDP_STATUS_SUCCESS) return;
+            if (attr.VendorID == XentaVid || g.Diag.Count < 8)
+                g.Diag.Add($"{MiCol(path)} {caps.UsagePage:X4}/{caps.Usage:X2} in{caps.InputReportByteLength} f{caps.FeatureReportByteLength} «{product}»");
             if (caps.UsagePage == 0x01)
             {
                 var k = caps.Usage switch { 0x02 => DeviceKind.Mouse, 0x06 => DeviceKind.Keyboard, 0x04 or 0x05 => DeviceKind.Gamepad, _ => DeviceKind.Unknown };
                 // a combo receiver exposes both: show it as the keyboard set
-                if (k == DeviceKind.Keyboard || (k != DeviceKind.Unknown && g.Kind == DeviceKind.Unknown)) g.Kind = k;
+                if (attr.VendorID == XentaVid) { if (k == DeviceKind.Mouse || g.Kind == DeviceKind.Unknown) g.Kind = DeviceKind.Mouse; } // its keyboard collection is for macros
+                else if (k == DeviceKind.Keyboard || (k != DeviceKind.Unknown && g.Kind == DeviceKind.Unknown)) g.Kind = k;
             }
             else if (caps.UsagePage == 0x0B && g.Kind == DeviceKind.Unknown) g.Kind = DeviceKind.Headset; // telephony = headset
 
             if (g.Level is null) TryBattery(path, pp, caps, g);
-            if (g.Level is null && attr.VendorID == XentaVid && caps.UsagePage >= 0xFF00 && caps.InputReportByteLength >= 5)
+            // Xenta battery frames come on a non-mouse/keyboard collection (vendor page on most receivers).
+            bool kbOrMouse = caps.UsagePage == 0x01 && caps.Usage is 0x02 or 0x06;
+            if (g.Level is null && attr.VendorID == XentaVid && !kbOrMouse && caps.InputReportByteLength is >= 5 and <= 65)
                 TryXenta(path, caps.InputReportByteLength, key, product, g);
         }
         finally { HidD_FreePreparsedData(pp); }
@@ -187,7 +207,8 @@ internal static class HidReceivers
         try
         {
             using var h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
-            if (!h.IsInvalid)
+            if (h.IsInvalid) g.Diag.Add($"{MiCol(path)} open failed ({Marshal.GetLastWin32Error()})");
+            else
             {
                 using var fs = new FileStream(h, FileAccess.Read, 0, isAsync: true);
                 var buf = new byte[Math.Max(reportLen, 8)];
@@ -202,6 +223,7 @@ internal static class HidReceivers
                     try { n = fs.ReadAsync(buf, 0, reportLen, cts.Token).GetAwaiter().GetResult(); }
                     catch (OperationCanceledException) { break; }
                     if (n < 5) continue;
+                    if (g.Diag.Count < 24) g.Diag.Add("rx " + Convert.ToHexString(buf, 0, Math.Min(n, 8)));
                     var frame = VendorBattery.ParseXenta(buf.AsSpan(0, n));
                     if (frame is null) continue;
                     if (prev == frame) found = frame; // sent twice in a row: confirmed
@@ -211,7 +233,7 @@ internal static class HidReceivers
                 found ??= prev;
             }
         }
-        catch (Exception e) { Log.Info($"Xenta read: {e.Message}"); }
+        catch (Exception e) { g.Diag.Add($"{MiCol(path)} read failed: {e.Message}"); }
 
         lock (VendorLock)
         {
@@ -224,6 +246,13 @@ internal static class HidReceivers
         g.Wireless = true;
         if (g.Kind == DeviceKind.Unknown) g.Kind = DeviceKind.Mouse;
         if (GenericReceiverName.IsMatch(product.Trim()) && (g.Name.Length == 0 || GenericReceiverName.IsMatch(g.Name))) g.Name = "Attack Shark";
+    }
+
+    static string MiCol(string path)
+    {
+        var mi = Regex.Match(path, @"mi_\d+", RegexOptions.IgnoreCase).Value;
+        var col = Regex.Match(path, @"col\d+", RegexOptions.IgnoreCase).Value;
+        return (mi + " " + col).Trim();
     }
 
     static string? DevicePath(IntPtr set, ref SP_DEVICE_INTERFACE_DATA data)

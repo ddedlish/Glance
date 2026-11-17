@@ -276,7 +276,7 @@ internal static class IconRenderer
     /// Renders the tray icon at 8× the tray size and downsamples with high-quality bicubic filtering:
     /// crisp, evenly antialiased edges and digits at every DPI (16–32 px), no blur.
     /// </summary>
-    public static Icon Device(int? level, bool charging, IconStyle style, int low)
+    public static Icon Device(int? level, bool charging, IconStyle style, int low, DeviceKind kind = DeviceKind.Unknown)
     {
         int sz = Size, big = sz * Supersample;
         using var hi = new Bitmap(big, big, PixelFormat.Format32bppArgb);
@@ -289,7 +289,8 @@ internal static class IconRenderer
             Painter.SoftText = true;
             try
             {
-                if (Theme.Current.Glass)
+                if (style == IconStyle.Device) DeviceIcon(g, big, level, charging, low, kind);
+                else if (Theme.Current.Glass)
                 {
                     if (style == IconStyle.Number) GlassNumber(g, big, level, charging, low);
                     else GlassBattery(g, big, level, charging, low, digits: style == IconStyle.BatteryNumber);
@@ -420,6 +421,64 @@ internal static class IconRenderer
             using var lg = new LinearGradientBrush(new RectangleF(f.X, f.Y - 1, f.Width, f.Height + 2), Lighten(fill, 0.4f), fill, LinearGradientMode.Vertical);
             g.FillPath(lg, fp);
         }
+    }
+
+    /// <summary>
+    /// The accessory itself — mouse, keyboard, headphones, gamepad… (Fluent icon, thickened for 16–32 px) —
+    /// with a capsule level bar underneath that drains and changes colour.
+    /// </summary>
+    static void DeviceIcon(Graphics g, int S, int? level, bool charging, int low, DeviceKind kind)
+    {
+        float u = S / 16f;
+        bool dark = Dark;
+        var fill = GlassFill(level, charging, low);
+        var fg = dark ? Color.White : Color.FromArgb(22, 22, 26);
+        bool critical = level is int lc && lc <= Math.Max(5, low / 2) && !charging;
+        var glyphColor = critical ? fill : fg;
+
+        using (var path = new GraphicsPath())
+        using (var ff = new FontFamily(Fonts.Icons))
+        {
+            path.AddString(Glyphs.For(kind).ToString(), ff, (int)FontStyle.Regular, 100f, PointF.Empty, StringFormat.GenericTypographic);
+            var b = path.GetBounds();
+            if (b.Width > 0 && b.Height > 0)
+            {
+                var box = new RectangleF(1.1f * u, 0.5f * u, 13.8f * u, 10.9f * u);
+                float sc = Math.Min(box.Width / b.Width, box.Height / b.Height);
+                using (var m = new Matrix())
+                {
+                    m.Translate(box.X + (box.Width - b.Width * sc) / 2, box.Y + (box.Height - b.Height * sc) / 2);
+                    m.Scale(sc, sc);
+                    m.Translate(-b.X, -b.Y);
+                    path.Transform(m);
+                }
+                // halo for contrast, then a slightly thickened glyph (thin Fluent strokes vanish at 16 px)
+                using (var halo = new Pen(dark ? Color.FromArgb(120, 0, 0, 0) : Color.FromArgb(150, 255, 255, 255), 2.2f * u) { LineJoin = LineJoin.Round })
+                    g.DrawPath(halo, path);
+                using (var pen = new Pen(glyphColor, 0.75f * u) { LineJoin = LineJoin.Round })
+                    g.DrawPath(pen, path);
+                using (var br = new SolidBrush(glyphColor))
+                    g.FillPath(br, path);
+            }
+        }
+
+        // level capsule
+        var bar = new RectangleF(1.0f * u, 12.7f * u, 14.0f * u, 2.8f * u);
+        using (var hp = Painter.Round(RectangleF.Inflate(bar, 0.5f * u, 0.5f * u), bar.Height / 2 + 0.5f * u))
+        using (var hb = new SolidBrush(dark ? Color.FromArgb(110, 0, 0, 0) : Color.FromArgb(130, 255, 255, 255)))
+            g.FillPath(hb, hp);
+        using (var tp = Painter.Round(bar, bar.Height / 2))
+        using (var tb = new SolidBrush(dark ? Color.FromArgb(90, 255, 255, 255) : Color.FromArgb(70, 0, 0, 0)))
+            g.FillPath(tb, tp);
+        float frac = level is int l ? Math.Clamp(l / 100f, 0.1f, 1f) : 0;
+        if (frac > 0)
+        {
+            var f = new RectangleF(bar.X, bar.Y, Math.Max(bar.Height, bar.Width * frac), bar.Height);
+            using var fp = Painter.Round(f, bar.Height / 2);
+            using var lg = new LinearGradientBrush(new RectangleF(f.X, f.Y - 1, f.Width, f.Height + 2), Lighten(fill, 0.3f), fill, LinearGradientMode.Vertical);
+            g.FillPath(lg, fp);
+        }
+        if (charging) Bolt(g, new RectangleF(10.2f * u, 0, 5.8f * u, 7.4f * u));
     }
 
     static readonly string DigitFamily = PickDigitFamily();

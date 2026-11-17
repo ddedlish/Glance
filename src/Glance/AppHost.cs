@@ -241,7 +241,7 @@ internal sealed class AppHost : ApplicationContext
 
     void TryPopup(Accessory a, DateTime since, int attempt)
     {
-        if (!a.Connected || a.ConnectedAt != since) return;
+        if (!a.Connected || a.ConnectedAt != since || a.Wired) return; // a cable needs no battery popup
         bool hasData = a.Level is not null;
         if (!hasData && attempt < 3)
         {
@@ -327,7 +327,7 @@ internal sealed class AppHost : ApplicationContext
     {
         if (_exiting) return;
         var visible = _r.ConnectedDevices
-            .Where(a => (a.Level is not null || a.HasParts || (_s.ShowUnknownInTray && IsAccessoryKind(a.Kind))) && !_s.For(a.Key).HideInTray)
+            .Where(a => (a.Level is not null || a.HasParts || (_s.ShowUnknownInTray && IsAccessoryKind(a.Kind) && !a.Wired)) && !_s.For(a.Key).HideInTray)
             .OrderBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
@@ -354,9 +354,9 @@ internal sealed class AppHost : ApplicationContext
             }
             string tip = key == SummaryKey ? string.Join("\n", visible.Take(4).Select(Svc.Tooltip)) : Svc.Tooltip(a);
             if (_pending is not null) tip = UpdateTip + "\n" + tip; // first line: survives the 128-char tooltip limit
-            string sig = $"{a.WeakestLevel}|{a.Charging}|{tip}|{_s.IconStyle}|{_s.RichHover}|{_s.LowBatteryThreshold}|{dark}|{size}";
+            string sig = $"{a.WeakestLevel}|{a.Charging}|{tip}|{_s.IconStyle}|{a.Kind}|{_s.RichHover}|{_s.LowBatteryThreshold}|{dark}|{size}";
             if (_iconSig.TryGetValue(key, out var old) && old == sig) continue;
-            icon.Set(IconRenderer.Device(a.WeakestLevel, a.Charging, _s.IconStyle, _s.LowBatteryThreshold), tip, _s.RichHover);
+            icon.Set(IconRenderer.Device(a.WeakestLevel, a.Charging, _s.IconStyle, _s.LowBatteryThreshold, a.Kind), tip, _s.RichHover);
             _iconSig[key] = sig;
         }
 

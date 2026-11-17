@@ -288,6 +288,7 @@ internal sealed class DeviceRegistry
                 if (a.Profile.Kind == DeviceKind.Unknown) a.Profile = a.Profile with { Kind = r.Kind };
                 ListChanged?.Invoke();
             }
+            if (a.Wired != r.Wired) { a.Wired = r.Wired; ListChanged?.Invoke(); }
             seen.Add(r.Id);
             _rxMisses.Remove(r.Id);
             if (!a.Connected)

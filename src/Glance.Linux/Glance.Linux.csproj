@@ -9,7 +9,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>Glance</AssemblyName>
     <RootNamespace>Glance</RootNamespace>
-    <Version>2.3.4</Version>
+    <Version>2.4.0</Version>
     <Product>Glance</Product>
     <Authors>ddedlish</Authors>
     <AssemblyTitle>Glance — заряд аксессуаров · by ddedlish</AssemblyTitle>

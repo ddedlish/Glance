@@ -53,6 +53,10 @@ public sealed class Accessory
     public string? GamepadId { get; set; }
     /// <summary>Connected through a 2.4 GHz USB receiver (not Bluetooth).</summary>
     public bool ViaReceiver { get; set; }
+    /// <summary>Plugged in by USB cable (no receiver, no battery to watch).</summary>
+    public bool Wired { get; set; }
+    /// <summary>How it is connected, for labels: «USB», «2.4 ГГц» or «Bluetooth».</summary>
+    public string Link => Wired ? "USB" : ViaReceiver ? "2.4 ГГц" : "Bluetooth";
     public Dictionary<string, bool> Endpoints { get; } = new(StringComparer.Ordinal);
 
     // Classification

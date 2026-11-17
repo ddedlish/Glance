@@ -5,7 +5,7 @@ namespace Glance;
 
 public enum TrayMode { PerDevice, Single }
 /// <summary>Tray icon look: draining battery (default), plain percent, or battery with digits inside.</summary>
-public enum IconStyle { Battery, Number, BatteryNumber }
+public enum IconStyle { Battery, Number, BatteryNumber, Device }
 
 public sealed class DeviceSettings
 {
@@ -21,7 +21,9 @@ public sealed class AppSettings
 {
     // Tray
     public TrayMode TrayMode { get; set; } = TrayMode.PerDevice;
-    public IconStyle IconStyle { get; set; } = IconStyle.Battery;
+    public IconStyle IconStyle { get; set; } = IconStyle.Device;
+    /// <summary>One-time upgrades of stored settings (1 = device-shaped tray icons in 2.4.0).</summary>
+    public int Migrations { get; set; } // absent in old files → 0 → upgraded on load
     public bool RichHover { get; set; } = true;
     public bool LiquidGlass { get; set; } = true;
     public bool ShowUnknownInTray { get; set; } = true;
@@ -88,7 +90,12 @@ public sealed class AppSettings
             if (File.Exists(FilePath))
             {
                 var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), Json);
-                if (s is not null) { s.Normalize(); return s; }
+                if (s is not null)
+                {
+                    if (s.Migrations < 1) { s.IconStyle = IconStyle.Device; s.Migrations = 1; }
+                    s.Normalize();
+                    return s;
+                }
             }
         }
         catch (Exception e)
@@ -96,7 +103,7 @@ public sealed class AppSettings
             Log.Error("Settings load", e);
             try { File.Copy(FilePath, FilePath + ".bad", true); } catch { }
         }
-        return new AppSettings();
+        return new AppSettings { Migrations = 1 };
     }
 
     void Normalize()
