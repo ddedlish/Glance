@@ -15,6 +15,9 @@ public sealed class DeviceSettings
     public DeviceKind Kind { get; set; }
     public int? LastLevel { get; set; }
     public DateTime LastSeen { get; set; }
+    // Pro: per-device rules
+    public int? LowThreshold { get; set; }
+    public bool Muted { get; set; }
 }
 
 public sealed class AppSettings
@@ -42,6 +45,16 @@ public sealed class AppSettings
     public bool CriticalSound { get; set; } = true;
     /// <summary>Glance's own sounds (glass or classic set) for connect, disconnect, low, full and updates.</summary>
     public bool Sounds { get; set; } = true;
+    /// <summary>Pro sound pack: 0 = follows the style (Glass/Classic), 1 = Неон, 2 = Маримба.</summary>
+    public int SoundPack { get; set; }
+
+    // Pro
+    public string? LicenseKey { get; set; }
+    /// <summary>Accent preset: 0 = system accent, 1 Аврора, 2 Закат, 3 Мята, 4 Графит (Pro).</summary>
+    public int AccentPreset { get; set; }
+    public bool Widget { get; set; }
+    public int WidgetX { get; set; } = int.MinValue;
+    public int WidgetY { get; set; } = int.MinValue;
     public int SoundVolume { get; set; } = 60;
 
     // Quiet hours: low / full / connect popups stay silent at night (critical still shows)

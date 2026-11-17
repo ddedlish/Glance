@@ -112,6 +112,12 @@ internal sealed class FlyoutForm : CardForm
 
         // header
         Painter.Text(g, "Аксессуары", Fonts.Strong(16 * s), t.Text, new RectangleF(16 * s, 14 * s, 200 * s, 26 * s));
+        if (Pro.IsActive)
+        {
+            var badge = new RectangleF(16 * s + Painter.Width(g, "Аксессуары", Fonts.Strong(16 * s)) + 8 * s, 18 * s, 34 * s, 18 * s);
+            Painter.FillRound(g, badge, 9 * s, t.AccentFill);
+            Painter.Text(g, "PRO", Fonts.Strong(10 * s), t.OnAccent, badge, StringAlignment.Center);
+        }
         int count = Svc.R.ConnectedDevices.Count();
         Painter.Text(g, Summary(count), Fonts.Regular(12 * s), t.SubText,
             new RectangleF(W * s - 176 * s, 16 * s, 160 * s, 22 * s), StringAlignment.Far);

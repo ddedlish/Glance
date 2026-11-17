@@ -240,3 +240,86 @@ public class SoundSynthTests
         Assert.InRange(peak, 5_000, 30_000); // audible, never clipping
     }
 }
+
+public class LicenseTests
+{
+    // Issued with the real private key (kept offline) — proves the built-in public key and format match.
+    const string OwnerKey = "GLANCE-R0wxfGRkZWRsaXNofDIwMjYxMTE4.sAb8eOPaU_ioRlfoxzT1BUY05zQo9zNJwlAaGqHs7aYkpCgmwDgwg5SH1BA3qFaYFR-eSwHBqx5N2r9muFmM2w";
+
+    [Fact]
+    public void Real_key_verifies()
+    {
+        var info = License.Verify(OwnerKey);
+        Assert.NotNull(info);
+        Assert.Equal("ddedlish", info!.Owner);
+        Assert.Equal(new DateTime(2026, 11, 18), info.Issued);
+    }
+
+    [Fact]
+    public void Tampered_or_garbage_keys_fail()
+    {
+        Assert.Null(License.Verify(OwnerKey.Replace("R0wxfGRkZWRsaXNo", "R0wxfGRkZWRsaXNp")));
+        Assert.Null(License.Verify(OwnerKey[..^2] + "AA"));
+        Assert.Null(License.Verify("GLANCE-abc.def"));
+        Assert.Null(License.Verify(""));
+        Assert.Null(License.Verify(null));
+    }
+
+    [Fact]
+    public void Issue_and_verify_roundtrip_with_spaces()
+    {
+        using var ec = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        var pem = ec.ExportPkcs8PrivateKeyPem();
+        var key = License.Issue("Иван Петров", pem, new DateTime(2026, 1, 2));
+        var spaced = string.Join(" \n", Enumerable.Range(0, key.Length / 10 + 1).Select(i => key.Substring(i * 10, Math.Min(10, key.Length - i * 10))));
+        var info = License.Verify(spaced, ec.ExportSubjectPublicKeyInfo());
+        Assert.NotNull(info);
+        Assert.Equal("Иван Петров", info!.Owner);
+        Assert.Null(License.Verify(key)); // signed by another key → not valid for the real public key
+    }
+}
+
+public class HistoryStatsTests
+{
+    static List<Sample> Cycle(long t0, double ratePerHour, int days)
+    {
+        var list = new List<Sample>();
+        long t = t0;
+        for (int d = 0; d < days; d++)
+        {
+            double r = ratePerHour * (1 + 0.04 * d); // drains a bit faster every day (wear)
+            for (int l = 100; l >= 20; l -= 5) { list.Add(new Sample(t, (byte)l, 0)); t += (long)(5 / r * 3600); }
+            list.Add(new Sample(t, 20, Sample.Charging)); t += 3600;
+            list.Add(new Sample(t, 100, Sample.Charging)); t += 86400 - 30000;
+        }
+        return list;
+    }
+
+    [Fact]
+    public void Drain_rate_and_cycles()
+    {
+        var s = Cycle(1_700_000_000, 10, 3);
+        var r = HistoryStats.Compute(s, 0, long.MaxValue);
+        Assert.InRange(r.DrainPerHour!.Value, 9, 12);
+        Assert.InRange(r.Cycles, 2.3, 2.5);
+        Assert.Null(r.WearPercent); // too little data
+    }
+
+    [Fact]
+    public void Wear_detected_over_two_weeks()
+    {
+        var s = Cycle(1_700_000_000, 10, 14);
+        var r = HistoryStats.Compute(s, 0, long.MaxValue);
+        Assert.NotNull(r.WearPercent);
+        Assert.InRange(r.WearPercent!.Value, 20, 60);
+    }
+
+    [Fact]
+    public void Csv_has_header_and_rows()
+    {
+        var csv = HistoryStats.Csv("Mouse; X", new[] { new Sample(1_700_000_000, 50, 1) });
+        Assert.StartsWith("﻿Устройство;", csv);
+        Assert.Contains("Mouse, X;", csv);
+        Assert.Contains(";50;да", csv);
+    }
+}

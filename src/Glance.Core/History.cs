@@ -14,7 +14,7 @@ public readonly record struct Sample(long T, byte L, byte F)
 /// </summary>
 internal sealed class HistoryStore
 {
-    const int MaxPerDevice = 1500;
+    const int MaxPerDevice = 6000; // ≈ a month of changes per device (Pro history view)
     static readonly byte[] Magic = "GLH1"u8.ToArray();
     static string FilePath => Path.Combine(AppInfo.DataDir, "history.bin");
 
@@ -146,5 +146,69 @@ internal sealed class HistoryStore
             Log.Error("History load", e);
             _data.Clear();
         }
+    }
+}
+
+/// <summary>Statistics for the Pro history view (pure: unit-tested).</summary>
+public static class HistoryStats
+{
+    public sealed record Result(double? DrainPerHour, double? HoursPerCharge, double Cycles, double? WearPercent, int Segments);
+
+    /// <summary>
+    /// Discharge segments = runs of falling level without charging (≥ 10 % drop, ≥ 20 min). Average drain is
+    /// %/h over them; cycles = total discharged % / 100; wear compares the median drain rate of the latest third
+    /// of segments with the earliest third (needs ≥ 6 segments over ≥ 7 days) — a faster drain for the same use
+    /// means the battery holds less.
+    /// </summary>
+    public static Result Compute(IReadOnlyList<Sample> samples, long from, long now)
+    {
+        var segs = new List<(long T0, double Rate, int Drop)>();
+        int i = 0;
+        var xs = samples.Where(x => x.T >= from && x.T <= now).ToList();
+        double discharged = 0;
+        while (i < xs.Count)
+        {
+            int j = i;
+            while (j + 1 < xs.Count && !xs[j + 1].IsCharging && !xs[j + 1].IsSessionStart && xs[j + 1].L <= xs[j].L && xs[j + 1].T - xs[j].T < 6 * 3600) j++;
+            if (j > i && !xs[i].IsCharging)
+            {
+                int drop = xs[i].L - xs[j].L;
+                double hours = (xs[j].T - xs[i].T) / 3600.0;
+                discharged += drop;
+                if (drop >= 10 && hours >= 1 / 3.0) segs.Add((xs[i].T, drop / hours, drop));
+            }
+            i = j + 1;
+        }
+        double? rate = null;
+        if (segs.Count > 0)
+        {
+            double w = segs.Sum(x => x.Drop);
+            rate = segs.Sum(x => x.Rate * x.Drop) / w;
+        }
+        double? wear = null;
+        if (segs.Count >= 6 && segs[^1].T0 - segs[0].T0 >= 7 * 86400)
+        {
+            int third = segs.Count / 3;
+            double early = Median(segs.Take(third).Select(x => x.Rate)), late = Median(segs.Skip(segs.Count - third).Select(x => x.Rate));
+            if (early > 0) wear = Math.Clamp((late / early - 1) * 100, 0, 80);
+        }
+        return new Result(rate, rate is > 0 ? 100 / rate : null, discharged / 100.0, wear, segs.Count);
+    }
+
+    static double Median(IEnumerable<double> v)
+    {
+        var a = v.OrderBy(x => x).ToArray();
+        return a.Length == 0 ? 0 : a.Length % 2 == 1 ? a[a.Length / 2] : (a[a.Length / 2 - 1] + a[a.Length / 2]) / 2;
+    }
+
+    /// <summary>CSV export (UTF-8 with BOM so Excel opens Cyrillic correctly).</summary>
+    public static string Csv(string device, IReadOnlyList<Sample> samples)
+    {
+        var sb = new System.Text.StringBuilder("﻿Устройство;Время;Заряд, %;Зарядка\r\n");
+        foreach (var x in samples)
+            sb.Append(device.Replace(';', ',')).Append(';')
+              .Append(DateTimeOffset.FromUnixTimeSeconds(x.T).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")).Append(';')
+              .Append(x.L).Append(';').Append(x.IsCharging ? "да" : "нет").Append("\r\n");
+        return sb.ToString();
     }
 }

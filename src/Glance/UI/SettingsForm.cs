@@ -12,7 +12,7 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
     SettingRow? _updateRow;
 
     public event Func<Task<string>>? CheckUpdatesRequested;
-    public event Action? InstallUpdateRequested;
+    public event Action? InstallUpdateRequested, HistoryRequested;
     /// <summary>Version text of an update that is ready to install, if any.</summary>
     public Func<string?> PendingUpdate { get; set; } = () => null;
 
@@ -143,10 +143,43 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
             return sg;
         }
 
+        // ── Glance Pro ──
+        Section("Glance Pro");
+        if (Pro.IsActive)
+        {
+            Row($"Pro активирован · {Pro.Info!.Owner}", $"Спасибо за поддержку! Ключ от {Pro.Info.Issued:dd.MM.yyyy}", null);
+        }
+        else
+        {
+            var buy = new FlatButton(sc, "Купить", primary: true);
+            buy.Click += (_, _) => AppInfo.OpenUrl(ProUi.BuyUrl);
+            Row("Откройте Glance Pro", string.Join(" · ", new[] { "виджет", "темы и звуки", "правила устройств", "история 30 дней и износ" }), buy);
+            var enter = new FlatButton(sc, "Ввести ключ");
+            enter.Click += (_, _) => { if (ProUi.Activate(_s)) { _s.NotifyChanged(); Ui.Post(Build); } };
+            Row("Уже есть ключ?", "Ключ приходит после покупки на Boosty", enter);
+        }
+
+        // Pro control: real control when active, otherwise a «Pro» button that explains what it unlocks.
+        Control ProOnly(Control real, string feature)
+        {
+            if (Pro.IsActive) return real;
+            real.Dispose();
+            var b = new FlatButton(sc, "🔒 Pro");
+            b.Click += (_, _) => { ProUi.Prompt(_s, feature); if (Pro.IsActive) Ui.Post(Build); };
+            return b;
+        }
+
         // ── Оформление ──
         Section("Оформление");
         Row("Стиль", "Liquid Glass — стекло, блики и яркие цвета. Классика — строгий плоский вид", Seg(new[] { "Liquid Glass", "Классика" },
             _s.LiquidGlass ? 0 : 1, i => _s.LiquidGlass = i == 0));
+
+        Row("Цветовая тема", "Свой акцент интерфейса и оттенок стекла", ProOnly(Seg(Theme.AccentPresets.Select(p => p.Name).ToArray(),
+            Math.Clamp(_s.AccentPreset, 0, Theme.AccentPresets.Length - 1), i => _s.AccentPreset = i), "Цветовые темы"));
+        Row("Виджет на рабочем столе", "Заряд всех устройств поверх окон. Перетаскивается, двойной клик — панель", ProOnly(Toggle(_s.Widget, v => _s.Widget = v), "Виджет на рабочем столе"));
+        var hist = new FlatButton(sc, "Открыть");
+        hist.Click += (_, _) => HistoryRequested?.Invoke();
+        Row("История и износ", "Графики за 24 ч / 7 / 30 дней, расход, циклы, CSV", ProOnly(hist, "История и износ"));
 
         // ── Трей ──
         Section("Значки в трее");
@@ -176,6 +209,8 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         var vol = new Stepper(sc, _s.SoundVolume, 10, 100, 10, v => $"{v}%");
         vol.ValueChanged += () => { _s.SoundVolume = vol.Value; _s.NotifyChanged(); Sounds.Play(SoundKind.Connected, _s, preview: true); };
         Row("Громкость звуков", "", vol);
+        Row("Набор звуков", "Стекло/Классика по стилю, или «Неон» и «Маримба»", ProOnly(Seg(new[] { "По стилю", "Неон", "Маримба" },
+            Math.Clamp(_s.SoundPack, 0, 2), i => { _s.SoundPack = i; Sounds.Play(SoundKind.Connected, _s, preview: true); }), "Наборы звуков"));
         var listen = new FlatButton(sc, "Прослушать");
         listen.Click += (_, _) =>
         {
@@ -183,7 +218,7 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
             Ui.Delay(1100, () => Sounds.Play(SoundKind.Disconnected, _s, preview: true));
             Ui.Delay(2200, () => Sounds.Play(SoundKind.Charged, _s, preview: true));
         };
-        Row("Набор звуков", "Подключение, отключение, полный заряд — в текущем стиле", listen);
+        Row("Прослушать звуки", "Подключение, отключение, полный заряд", listen);
         Row("Звук при критическом заряде", "Тревожный сигнал вместе с баннером — даже ночью", Toggle(_s.CriticalSound, v => _s.CriticalSound = v));
         Row("Полностью заряжено", "Сообщить, когда устройство на зарядке дошло до 100%", Toggle(_s.FullChargeAlert, v => _s.FullChargeAlert = v));
         var qFrom = new Stepper(sc, _s.QuietFrom, 0, 23, 1, v => $"с {v:00}:00");

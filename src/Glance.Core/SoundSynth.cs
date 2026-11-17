@@ -16,15 +16,22 @@ public static class SoundSynth
     readonly record struct Note(double Freq, double Start, double Length, double Gain = 1);
 
     /// <summary>Complete 16-bit mono WAV file for <paramref name="kind"/> at <paramref name="volume"/> (0–1).</summary>
-    public static byte[] Wav(SoundKind kind, bool glass, double volume)
+    public static byte[] Wav(SoundKind kind, bool glass, double volume, int pack = 0)
     {
-        var notes = glass ? GlassNotes(kind) : ClassicNotes(kind);
+        var notes = pack switch
+        {
+            1 => GlassNotes(kind).Select(n => n with { Freq = n.Freq / 2 }).ToArray(),   // Неон
+            2 => GlassNotes(kind).Select(n => n with { Freq = n.Freq / 2 }).ToArray(),   // Маримба
+            _ => glass ? GlassNotes(kind) : ClassicNotes(kind),
+        };
         double total = notes.Max(n => n.Start + n.Length) + 0.05;
         int count = (int)(total * Rate);
         var mix = new double[count];
         foreach (var n in notes)
         {
-            if (glass) Bell(mix, n, kind == SoundKind.Critical);
+            if (pack == 1) Pluck(mix, n);
+            else if (pack == 2) Marimba(mix, n);
+            else if (glass) Bell(mix, n, kind == SoundKind.Critical);
             else Blip(mix, n);
         }
         // normalise to a comfortable peak, then apply the user volume
@@ -61,6 +68,34 @@ public static class SoundSynth
                 v += gain * Math.Exp(-decay * t) * Math.Sin(2 * Math.PI * n.Freq * ratio * t + 0.3 * Math.Sin(2 * Math.PI * 5.2 * t) * ratio * 0.002);
             if (tremolo) v *= 0.8 + 0.2 * Math.Sin(2 * Math.PI * 9 * t);
             mix[s0 + i] += v * attack * release * n.Gain;
+        }
+    }
+
+    // ── Pro packs ──
+
+    /// <summary>«Неон»: bright synth pluck — harmonics that fade faster the higher they are.</summary>
+    static void Pluck(double[] mix, Note n)
+    {
+        int s0 = (int)(n.Start * Rate), len = (int)(Math.Min(n.Length, 0.45) * Rate);
+        for (int i = 0; i < len && s0 + i < mix.Length; i++)
+        {
+            double t = i / (double)Rate, v = 0;
+            for (int h = 1; h <= 7; h++) v += Math.Sin(2 * Math.PI * n.Freq * h * t) / h * Math.Exp(-(6 + h * 3.5) * t);
+            double env = Math.Min(1, t / 0.003) * (i > len - 300 ? (len - i) / 300.0 : 1);
+            mix[s0 + i] += v * env * n.Gain;
+        }
+    }
+
+    /// <summary>«Маримба»: warm wooden mallet — fundamental plus a quickly damped 4th partial.</summary>
+    static void Marimba(double[] mix, Note n)
+    {
+        int s0 = (int)(n.Start * Rate), len = (int)(Math.Min(n.Length, 0.6) * Rate);
+        for (int i = 0; i < len && s0 + i < mix.Length; i++)
+        {
+            double t = i / (double)Rate;
+            double v = Math.Sin(2 * Math.PI * n.Freq * t) * Math.Exp(-7 * t) + 0.45 * Math.Sin(2 * Math.PI * n.Freq * 4 * t) * Math.Exp(-38 * t);
+            double env = Math.Min(1, t / 0.002) * (i > len - 300 ? (len - i) / 300.0 : 1);
+            mix[s0 + i] += v * env * n.Gain;
         }
     }
 

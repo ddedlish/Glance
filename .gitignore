@@ -3,3 +3,7 @@ obj/
 out/
 .vs/
 *.user
+
+# private signing keys — never commit
+*.key
+*.pem

@@ -1,21 +1,25 @@
-MIT License
+Glance — Лицензионное соглашение (проприетарная лицензия)
+Copyright © 2026 ddedlish (https://steamcommunity.com/id/ddedlish/). Все права защищены.
 
-Copyright (c) 2026 ddedlish (https://steamcommunity.com/id/ddedlish/)
+1. Программа Glance (исходный код, сборки, графика, звуки) принадлежит автору — ddedlish.
+2. Разрешается бесплатно скачивать официальные сборки Glance и пользоваться бесплатными функциями
+   на своих устройствах.
+3. Функции Glance Pro доступны только с действительным ключом, полученным у автора. Ключ личный:
+   его нельзя передавать, продавать или публиковать.
+4. Запрещается без письменного разрешения автора: копировать, изменять, распространять или продавать
+   программу и её исходный код; создавать производные программы; обходить, отключать или подделывать
+   проверку ключей Glance Pro; выпускать «взломанные» или модифицированные сборки.
+5. Программа предоставляется «как есть», без гарантий. Автор не отвечает за возможный ущерб от её
+   использования.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Версии Glance до 3.1.0 распространялись по лицензии MIT; права на них, уже полученные по MIT, сохраняются.
+Эта лицензия действует для Glance 3.1.0 и всех последующих версий.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+---
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Glance — End User License Agreement (proprietary)
+Copyright © 2026 ddedlish. All rights reserved.
+You may download official builds and use the free features. Glance Pro features require a valid personal
+licence key from the author. Copying, modifying, redistributing or selling the software or its source code,
+creating derivative works, and circumventing or forging licence checks are prohibited without the author's
+written permission. Provided "as is", without warranty. Versions before 3.1.0 were MIT-licensed.

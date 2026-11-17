@@ -30,6 +30,9 @@ internal static class Program
 
         InitUi();
 
+        // ── Author's Pro key generator (needs the private key file, which never ships) ──
+        if (Has("--keygen")) { Application.Run(new KeyGenForm()); return 0; }
+
         // ── Uninstall (Settings → Apps → Glance → Delete) ──
         if (Has("--uninstall"))
         {

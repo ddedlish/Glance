@@ -59,10 +59,27 @@ internal sealed class Theme
     public static void Refresh()
     {
         var t = Load();
-        if (t.Dark == Current.Dark && t.TaskbarDark == Current.TaskbarDark && t.Accent == Current.Accent && t.Glass == Current.Glass) return;
+        if (t.Dark == Current.Dark && t.TaskbarDark == Current.TaskbarDark && t.Accent == Current.Accent && t.Glass == Current.Glass && t.CustomAccent == Current.CustomAccent) return;
         Current = t;
         Changed?.Invoke();
     }
+
+    static int _accentPreset;
+    public static readonly (string Name, Color Color)[] AccentPresets =
+    {
+        ("Системный", Color.Empty), ("Аврора", Color.FromArgb(124, 92, 255)), ("Закат", Color.FromArgb(255, 107, 61)),
+        ("Мята", Color.FromArgb(46, 196, 160)), ("Графит", Color.FromArgb(138, 148, 166)),
+    };
+
+    /// <summary>Pro accent themes: replaces the Windows accent and lightly tints the glass.</summary>
+    public static void SetAccent(int preset)
+    {
+        _accentPreset = Math.Clamp(preset, 0, AccentPresets.Length - 1);
+        Current = Load();
+        Changed?.Invoke();
+    }
+
+    public bool CustomAccent { get; private init; }
 
     /// <summary>Switches between Liquid Glass and the classic flat look.</summary>
     public static void SetGlass(bool glass)
@@ -92,7 +109,8 @@ internal sealed class Theme
             }
         }
         catch { }
-        return new Theme { Dark = !appsLight, TaskbarDark = !sysLight, Accent = accent, Glass = _glassWanted };
+        if (_accentPreset > 0) accent = AccentPresets[_accentPreset].Color;
+        return new Theme { Dark = !appsLight, TaskbarDark = !sysLight, Accent = accent, Glass = _glassWanted, CustomAccent = _accentPreset > 0 };
     }
 
     public Color LevelColor(int? level, bool charging, int low)
@@ -143,7 +161,14 @@ internal sealed class Theme
     }
 
     /// <summary>Tint laid over the blurred background: enough for legible text, still clearly transparent.</summary>
-    public Color GlassTint => Dark ? Color.FromArgb(178, 18, 20, 28) : Color.FromArgb(185, 246, 247, 250);
+    public Color GlassTint
+    {
+        get
+        {
+            var c = Dark ? Color.FromArgb(178, 18, 20, 28) : Color.FromArgb(185, 246, 247, 250);
+            return CustomAccent ? Color.FromArgb(c.A, Mix(c, Accent, Dark ? 0.16f : 0.10f)) : c;
+        }
+    }
 
     public static Color Mix(Color a, Color b, float t) => Color.FromArgb(
         (int)(a.A + (b.A - a.A) * t), (int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));

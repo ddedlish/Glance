@@ -40,10 +40,19 @@ internal sealed class UpdateService
     public async Task<Release?> CheckAsync(CancellationToken ct = default)
     {
         if (!AppInfo.UpdatesConfigured) return null;
-        using var req = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{AppInfo.UpdateRepo}/releases/latest");
-        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        using var resp = await Http.SendAsync(req, ct).ConfigureAwait(false);
-        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null; // no releases yet
+        // First repository that answers wins (the public releases repo; the code repo may be private → 404).
+        HttpResponseMessage? resp = null;
+        foreach (var repo in AppInfo.UpdateRepos)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repo}/releases/latest");
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+            var r = await Http.SendAsync(req, ct).ConfigureAwait(false);
+            if (r.StatusCode == System.Net.HttpStatusCode.NotFound) { r.Dispose(); continue; }
+            resp = r;
+            break;
+        }
+        if (resp is null) return null;
+        using var _resp = resp;
         resp.EnsureSuccessStatusCode();
         await using var st = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(st, cancellationToken: ct).ConfigureAwait(false);

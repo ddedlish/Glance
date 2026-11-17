@@ -16,13 +16,15 @@ internal static class AppInfo
     /// (-p:GlanceUpdateRepo=${{ github.repository }}), so forks update from their own releases and
     /// local builds simply have updates switched off. Nothing to edit by hand.
     /// </summary>
-    public static string UpdateRepo { get; } = ReadUpdateRepo();
+    /// <summary>Release repositories in priority order ("a/b;c/d"): the public releases repo first, then the code repo.</summary>
+    public static IReadOnlyList<string> UpdateRepos { get; } = ReadUpdateRepos();
+    public static string UpdateRepo => UpdateRepos.Count > 0 ? UpdateRepos[0] : "";
 
-    public static bool UpdatesConfigured => UpdateRepo.Length > 0;
+    public static bool UpdatesConfigured => UpdateRepos.Count > 0;
 
     public static string? RepoUrl => UpdatesConfigured ? $"https://github.com/{UpdateRepo}" : null;
 
-    static string ReadUpdateRepo()
+    static IReadOnlyList<string> ReadUpdateRepos()
     {
         try
         {
@@ -31,9 +33,11 @@ internal static class AppInfo
                 .OfType<System.Reflection.AssemblyMetadataAttribute>()
                 .FirstOrDefault(a => a.Key == "GlanceUpdateRepo")?.Value ?? "";
             // owner/name with GitHub-safe characters only
-            return System.Text.RegularExpressions.Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9\-]{0,38}/[A-Za-z0-9._\-]{1,100}$") ? value : "";
+            return value.Split(new[] { ';', '+', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(v => System.Text.RegularExpressions.Regex.IsMatch(v, @"^[A-Za-z0-9][A-Za-z0-9\-]{0,38}/[A-Za-z0-9._\-]{1,100}$"))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
-        catch { return ""; }
+        catch { return Array.Empty<string>(); }
     }
 
     /// <summary>Opens an https link in the default browser (constant, trusted URLs only).</summary>

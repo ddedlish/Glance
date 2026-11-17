@@ -10,7 +10,7 @@ namespace Glance;
 /// </summary>
 internal static class Sounds
 {
-    static readonly Dictionary<(SoundKind, bool, int), byte[]> Cache = new();
+    static readonly Dictionary<(SoundKind, bool, int, int), byte[]> Cache = new();
     static readonly object Gate = new();
     static SoundPlayer? _player;
     static MemoryStream? _stream;
@@ -29,6 +29,7 @@ internal static class Sounds
         _lastAt = DateTime.UtcNow;
         bool glass = Theme.Current.Glass;
         int vol = Math.Clamp(s.SoundVolume, 0, 100);
+        int pack = Pro.IsActive ? Math.Clamp(s.SoundPack, 0, 2) : 0;
         _ = Task.Run(() =>
         {
             try
@@ -36,8 +37,8 @@ internal static class Sounds
                 byte[] wav;
                 lock (Gate)
                 {
-                    if (!Cache.TryGetValue((kind, glass, vol), out wav!))
-                        Cache[(kind, glass, vol)] = wav = SoundSynth.Wav(kind, glass, vol / 100.0);
+                    if (!Cache.TryGetValue((kind, glass, vol, pack), out wav!))
+                        Cache[(kind, glass, vol, pack)] = wav = SoundSynth.Wav(kind, glass, vol / 100.0, pack);
                     _player?.Stop();
                     _player?.Dispose();
                     _stream?.Dispose();

@@ -44,6 +44,9 @@ internal sealed class AppHost : ApplicationContext
     public AppHost(bool autostart, bool afterUpdate)
     {
         _s = AppSettings.Load();
+        Pro.Apply(_s.LicenseKey);
+        Pro.Changed += () => Ui.Post(() => { Theme.SetAccent(Pro.IsActive ? _s.AccentPreset : 0); SyncWidget(); _flyout?.Invalidate(); });
+        Theme.SetAccent(Pro.IsActive ? _s.AccentPreset : 0);
         Theme.SetGlass(_s.LiquidGlass);
         _h = new HistoryStore();
         _r = new DeviceRegistry(_s, _h);
@@ -87,6 +90,7 @@ internal sealed class AppHost : ApplicationContext
             });
 
         ScheduleUpdateChecks();
+        Ui.Delay(1500, SyncWidget);
         Ui.Delay(30_000, TrimMemory);
         Log.Info($"Started {AppInfo.VersionText}");
     }
@@ -100,7 +104,7 @@ internal sealed class AppHost : ApplicationContext
         _r.DeviceConnected += OnConnected;
         _r.DeviceDisconnected += OnDisconnected;
         _r.Changed += OnChanged;
-        _r.ListChanged += () => { SyncTray(); _flyout?.Rebuild(); };
+        _r.ListChanged += () => { SyncTray(); _flyout?.Rebuild(); _widget?.Refresh(true); };
 
         _poller.Result += (pnp, pads, rx) =>
         {
@@ -232,6 +236,7 @@ internal sealed class AppHost : ApplicationContext
             a.SessionStartPending = false;
         }
         CheckAlerts(a);
+        _widget?.Refresh(false);
         SyncTray();
         _flyout?.Invalidate();
         _hover?.RefreshDevice(a);
@@ -251,6 +256,7 @@ internal sealed class AppHost : ApplicationContext
     void TryPopup(Accessory a, DateTime since, int attempt)
     {
         if (!a.Connected || a.ConnectedAt != since) return;
+        if (Pro.IsActive && _s.For(a.Key).Muted) return; // Pro rule: this device stays silent
         bool hasData = a.Level is not null;
         if (!hasData && attempt < 3)
         {
@@ -272,9 +278,12 @@ internal sealed class AppHost : ApplicationContext
         if (weakest is not int lv) return;
         bool charging = a.Charging;
 
-        if (_s.LowBatteryAlerts)
+        var rules = _s.For(a.Key);
+        bool muted = Pro.IsActive && rules.Muted;
+        int lowAt = Pro.IsActive && rules.LowThreshold is int own ? own : _s.LowBatteryThreshold;
+        if (_s.LowBatteryAlerts && !muted)
         {
-            if (!charging && lv <= _s.LowBatteryThreshold)
+            if (!charging && lv <= lowAt)
             {
                 if (!_lowAlerted.Contains(a.Key) && !(_s.RespectFocus && Native.UserIsBusy()) && !_s.IsQuietNow())
                 {
@@ -283,12 +292,12 @@ internal sealed class AppHost : ApplicationContext
                     Sounds.Play(SoundKind.Low, _s);
                 }
             }
-            else if (charging || lv >= _s.LowBatteryThreshold + 5) _lowAlerted.Remove(a.Key);
+            else if (charging || lv >= lowAt + 5) _lowAlerted.Remove(a.Key);
         }
 
         CheckCritical(a, lv, charging);
 
-        if (_s.FullChargeAlert)
+        if (_s.FullChargeAlert && !muted)
         {
             bool full = a.HasParts && !a.IsSplitDevice
                 ? a.Left is { Level: >= 100, Charging: true } && a.Right is { Level: >= 100, Charging: true }
@@ -484,6 +493,13 @@ internal sealed class AppHost : ApplicationContext
         if (_pending is not null) m.Item($"Установить версию {_pending.VersionText}", () => _ = InstallUpdateAsync(_pending));
         var hidden = _r.All.Where(x => _s.For(x.Key).HideInTray && x.Connected).ToList();
         foreach (var x in hidden) m.Item($"Показать в трее: {x.DisplayName}", () => { _s.For(x.Key).HideInTray = false; _s.Save(); SyncTray(); });
+        var w = m.Item("Виджет на рабочем столе" + (Pro.IsActive ? "" : " · Pro"), () =>
+        {
+            if (!Pro.IsActive) { ProUi.Prompt(_s, "Виджет на рабочем столе"); return; }
+            _s.Widget = !_s.Widget; _s.Save(); SyncWidget();
+        });
+        w.Checked = Pro.IsActive && _s.Widget;
+        if (!Pro.IsActive) m.Item("Glance Pro…", () => Ui.Post(() => ProUi.Prompt(_s)));
         m.Item("Bluetooth", FlyoutForm.OpenBluetoothSettings);
         m.Item("Настройки Glance", OpenSettings);
         m.Separator();
@@ -500,6 +516,25 @@ internal sealed class AppHost : ApplicationContext
         if (ds.HideInTray) m.Item("Показывать в трее", () => { ds.HideInTray = false; _s.Save(); SyncTray(); });
         else m.Item("Скрыть из трея", () => { ds.HideInTray = true; _s.Save(); SyncTray(); });
         if (!a.Connected) m.Item("Убрать из списка", () => _r.Forget(a));
+        m.Separator();
+        m.Header(Pro.IsActive ? "Правила устройства" : "Правила устройства · Pro");
+        string th = ds.LowThreshold is int own ? $"{own}%" : $"как везде ({_s.LowBatteryThreshold}%)";
+        m.Item($"Порог низкого заряда: {th}", () =>
+        {
+            if (!Pro.IsActive) { Ui.Post(() => ProUi.Prompt(_s, "Правила устройства")); return; }
+            int?[] steps = { null, 10, 20, 30, 40 };
+            int idx = Array.IndexOf(steps, ds.LowThreshold);
+            ds.LowThreshold = steps[(idx + 1) % steps.Length];
+            _lowAlerted.Remove(a.Key);
+            _s.Save();
+        });
+        var mute = m.Item("Без уведомлений", () =>
+        {
+            if (!Pro.IsActive) { Ui.Post(() => ProUi.Prompt(_s, "Правила устройства")); return; }
+            ds.Muted = !ds.Muted; _s.Save();
+        });
+        mute.Checked = Pro.IsActive && ds.Muted;
+        m.Item("История и износ…", () => Ui.Post(() => OpenHistory(a)));
         m.Separator();
         m.Item("Bluetooth", FlyoutForm.OpenBluetoothSettings);
         owner.MenuOpen = true;
@@ -546,6 +581,7 @@ internal sealed class AppHost : ApplicationContext
         var f = new SettingsForm(_s) { PendingUpdate = () => _pending?.VersionText };
         f.CheckUpdatesRequested += () => CheckUpdatesAsync(manual: true);
         f.InstallUpdateRequested += () => { if (_pending is not null) _ = InstallUpdateAsync(_pending); };
+        f.HistoryRequested += () => OpenHistory(null);
         f.FormClosed += (_, _) => { _settingsForm = null; Ui.Delay(10_000, TrimMemory); };
         _settingsForm = f;
         f.Show();
@@ -554,7 +590,9 @@ internal sealed class AppHost : ApplicationContext
 
     void OnSettingsChanged()
     {
+        Theme.SetAccent(Pro.IsActive ? _s.AccentPreset : 0);
         Theme.SetGlass(_s.LiquidGlass);
+        SyncWidget();
         _tray.SetHotkey(_s.Hotkey);
         RefreshPolling();
         UpdateBudsTargets(null);
@@ -653,6 +691,32 @@ internal sealed class AppHost : ApplicationContext
         if (_flyout is not null || _hover is not null || _settingsForm is not null || _overlay is not null || _toasts.Visible) return;
         GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
         Native.TrimWorkingSet();
+    }
+
+    // ───────────────────────────── Pro ─────────────────────────────
+
+    WidgetForm? _widget;
+
+    void SyncWidget()
+    {
+        if (_exiting) return;
+        bool want = Pro.IsActive && _s.Widget;
+        if (want && _widget is null)
+        {
+            _widget = new WidgetForm(_s);
+            _widget.OpenPanel += () => OpenFlyout(null);
+            _widget.FormClosed += (_, _) => _widget = null;
+            _widget.ShowWidget();
+        }
+        else if (!want && _widget is not null) { _widget.Close(); _widget = null; }
+        else _widget?.ApplyTheme();
+    }
+
+    void OpenHistory(Accessory? a)
+    {
+        _flyout?.CloseAnimated();
+        if (!Pro.IsActive) { ProUi.Prompt(_s, "История и износ"); return; }
+        new HistoryForm(a).ShowCentered();
     }
 
     void ExitApp()
