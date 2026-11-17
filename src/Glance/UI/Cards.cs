@@ -67,6 +67,31 @@ internal static class DeviceCard
         return h;
     }
 
+    static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+
+    /// <summary>Charging: a bright band sweeps along the filled part of the bar (energy flowing in).</summary>
+    static void Shimmer(Graphics g, RectangleF fill)
+    {
+        if (fill.Width < 4) return;
+        float k = Clock.ElapsedMilliseconds % 1400 / 1400f;
+        float bw = Math.Max(10, fill.Width * 0.45f);
+        float x = fill.X - bw + (fill.Width + bw) * k;
+        var band = new RectangleF(x, fill.Y, bw, fill.Height);
+        var st = g.Save();
+        using (var clip = Painter.Round(fill, fill.Height / 2)) g.SetClip(clip, System.Drawing.Drawing2D.CombineMode.Intersect);
+        using (var br = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(band.X - 1, band.Y, band.Width + 2, band.Height), Color.Transparent, Color.Transparent, 0f))
+        {
+            var blend = new System.Drawing.Drawing2D.ColorBlend
+            {
+                Colors = new[] { Color.FromArgb(0, 255, 255, 255), Color.FromArgb(190, 255, 255, 255), Color.FromArgb(0, 255, 255, 255) },
+                Positions = new[] { 0f, 0.5f, 1f },
+            };
+            br.InterpolationColors = blend;
+            g.FillRectangle(br, band);
+        }
+        g.Restore(st);
+    }
+
     /// <summary>At least an hour of samples with some movement, otherwise the sparkline is just noise.</summary>
     static bool HasHistory(Accessory a)
     {
@@ -104,13 +129,18 @@ internal static class DeviceCard
         float pw = a.Connected ? Math.Max(58 * s, Painter.Width(g, "100%", pctFont) + 14 * s) : 30 * s;
         if (a.Connected)
         {
-            int? shown = lvl is int lg ? (int)MathF.Round(lg * grow) : null; // counts up when the panel opens
+            // counts up when the panel opens and glides to a new value when the level changes
+            float tween = lvl is int lg ? LevelTween.Value(a.Key, lg) * grow : 0;
+            int? shown = lvl is not null ? (int)MathF.Round(tween) : null;
             Painter.Text(g, Fmt.Percent(shown), pctFont, t.LevelColor(lvl, a.Charging, Svc.Low), new RectangleF(right - pw, r.Y + 11 * s, pw, 26 * s), StringAlignment.Far);
-            if (a.Charging)
-                Painter.Glyph(g, Glyphs.Bolt, 12 * s, t.Good, new RectangleF(right - pw - 16 * s, r.Y + 15 * s, 16 * s, 18 * s));
+            if (a.Charging) // the bolt «breathes» while charging
+                Painter.Glyph(g, Glyphs.Bolt, 12 * s, Theme.Alpha(t.Good, (int)(175 + 80 * MathF.Sin(Clock.ElapsedMilliseconds / 260f))), new RectangleF(right - pw - 16 * s, r.Y + 15 * s, 16 * s, 18 * s));
             if (lvl is not null)
-                Painter.Bar(g, new RectangleF(right - 44 * s, r.Y + 41 * s, 44 * s, 4 * s), lvl.Value / 100f * grow,
-                    t.BarColor(lvl, a.Charging, Svc.Low), Theme.Alpha(t.Track, 160));
+            {
+                var bar = new RectangleF(right - 44 * s, r.Y + 41 * s, 44 * s, 4 * s);
+                Painter.Bar(g, bar, tween / 100f, t.BarColor(lvl, a.Charging, Svc.Low), Theme.Alpha(t.Track, 160));
+                if (a.Charging) Shimmer(g, new RectangleF(bar.X, bar.Y, Math.Max(bar.Height, bar.Width * tween / 100f), bar.Height));
+            }
         }
 
         // name + status
@@ -274,5 +304,32 @@ internal abstract class CardForm : Form, IGlassLayer
         var g = Graphics.FromImage(holder);
         Painter.Prepare(g);
         return g;
+    }
+}
+
+/// <summary>Smoothly glides displayed levels to new values (700 ms ease-out) instead of jumping.</summary>
+internal static class LevelTween
+{
+    const int Ms = 700;
+    static readonly Dictionary<string, (float From, int To, long T0)> Map = new();
+    static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+
+    public static float Value(string key, int target)
+    {
+        long now = Clock.ElapsedMilliseconds;
+        if (!Map.TryGetValue(key, out var e)) { Map[key] = (target, target, now - Ms); return target; }
+        if (e.To != target) { e = (Current(e, now), target, now); Map[key] = e; }
+        return Current(e, now);
+    }
+
+    public static bool Animating
+    {
+        get { long now = Clock.ElapsedMilliseconds; foreach (var e in Map.Values) if (now - e.T0 < Ms) return true; return false; }
+    }
+
+    static float Current((float From, int To, long T0) e, long now)
+    {
+        float k = Animator.EaseOut(Math.Clamp((now - e.T0) / (float)Ms, 0, 1));
+        return e.From + (e.To - e.From) * k;
     }
 }

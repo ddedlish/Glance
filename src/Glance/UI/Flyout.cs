@@ -113,7 +113,7 @@ internal sealed class FlyoutForm : CardForm
         // header
         Painter.Text(g, "Аксессуары", Fonts.Strong(16 * s), t.Text, new RectangleF(16 * s, 14 * s, 200 * s, 26 * s));
         int count = Svc.R.ConnectedDevices.Count();
-        Painter.Text(g, count == 0 ? "" : $"подключено: {count}", Fonts.Regular(12 * s), t.SubText,
+        Painter.Text(g, Summary(count), Fonts.Regular(12 * s), t.SubText,
             new RectangleF(W * s - 176 * s, 16 * s, 160 * s, 22 * s), StringAlignment.Far);
 
         // list (clipped)
@@ -139,6 +139,7 @@ internal sealed class FlyoutForm : CardForm
             else
             {
                 DeviceCard.Draw(g, r, a!, s, i == _hot, true, Arrive(i + 2));
+                if (i == _hot && t.Glass) CursorLight(g, r, s);
                 if (a!.Key == _expKey && _expand > 0.05f)
                 {
                     var st2 = g.Save();
@@ -152,7 +153,9 @@ internal sealed class FlyoutForm : CardForm
                 }
             }
         }
+        DrawRipples(g, s);
         g.Restore(state);
+        if (LevelTween.Animating || _ripples.Count > 0) EnsureTick();
 
         // scroll hint
         if (_contentH > _viewH)
@@ -216,6 +219,91 @@ internal sealed class FlyoutForm : CardForm
         _expAnim = Animator.Run(150, p => { if (IsDisposed) return; _expand = from + (1 - from) * p; Rebuild(); }, () => _expAnim = null);
     }
 
+    // ───────────── «wow» layer: cursor light, ripples, live ticking ─────────────
+
+    Point _mouse;
+    readonly List<(PointF C, RectangleF Clip, float Radius, long T0)> _ripples = new();
+    static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+    System.Windows.Forms.Timer? _tick;
+
+    /// <summary>Header line: how many are connected and which one needs charging first.</summary>
+    static string Summary(int count)
+    {
+        if (count == 0) return "";
+        var weakest = Svc.R.ConnectedDevices.Where(a => a.WeakestLevel is not null && !a.Charging).MinBy(a => a.WeakestLevel);
+        string head = $"подключено: {count}";
+        return weakest is not null && weakest.WeakestLevel <= 50 ? $"{head} · {weakest.DisplayName.Split(' ')[0]} {weakest.WeakestLevel}%" : head;
+    }
+
+    /// <summary>Liquid Glass: a soft specular light that follows the cursor across the hovered card.</summary>
+    void CursorLight(Graphics g, RectangleF card, float s)
+    {
+        if (!card.Contains(_mouse)) return;
+        float rad = 120 * s;
+        var st = g.Save();
+        using (var clip = Painter.Round(card, 12 * s)) g.SetClip(clip, System.Drawing.Drawing2D.CombineMode.Intersect);
+        using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+        {
+            path.AddEllipse(_mouse.X - rad, _mouse.Y - rad, rad * 2, rad * 2);
+            using var br = new System.Drawing.Drawing2D.PathGradientBrush(path)
+            {
+                CenterColor = Color.FromArgb(T.Dark ? 34 : 70, 255, 255, 255),
+                SurroundColors = new[] { Color.FromArgb(0, 255, 255, 255) },
+            };
+            g.FillPath(br, path);
+        }
+        g.Restore(st);
+    }
+
+    /// <summary>Material-style ripple from the click point, clipped to the card/button that was pressed.</summary>
+    void AddRipple(Point p, RectangleF clip)
+    {
+        _ripples.Add((p, clip, Math.Max(clip.Width, clip.Height) * 1.1f, Clock.ElapsedMilliseconds));
+        EnsureTick();
+    }
+
+    void DrawRipples(Graphics g, float s)
+    {
+        long now = Clock.ElapsedMilliseconds;
+        _ripples.RemoveAll(r => now - r.T0 > 520);
+        foreach (var (c, clip, radius, t0) in _ripples)
+        {
+            float k = Animator.EaseOut(Math.Clamp((now - t0) / 520f, 0, 1));
+            float rr = radius * k;
+            var st = g.Save();
+            using (var cp = Painter.Round(clip, Math.Min(12 * s, clip.Height / 2))) g.SetClip(cp, System.Drawing.Drawing2D.CombineMode.Intersect);
+            using var b = new SolidBrush(Theme.Alpha(T.Dark ? Color.White : T.Accent, (int)(60 * (1 - k))));
+            g.FillEllipse(b, c.X - rr, c.Y - rr, rr * 2, rr * 2);
+            g.Restore(st);
+        }
+    }
+
+    /// <summary>
+    /// ~30 fps repaint only while something is alive on screen: ripples, a level that is tweening,
+    /// or a device that is charging (its bar shimmers). Stops by itself — zero cost when idle.
+    /// </summary>
+    void EnsureTick()
+    {
+        if (_tick is null)
+        {
+            _tick = new System.Windows.Forms.Timer { Interval = 33 };
+            _tick.Tick += (_, _) =>
+            {
+                if (IsDisposed || !Visible) { _tick!.Stop(); return; }
+                bool alive = _ripples.Count > 0 || LevelTween.Animating || Svc.R.ConnectedDevices.Any(a => a.Charging);
+                if (!alive) { _tick!.Stop(); return; }
+                Invalidate();
+            };
+        }
+        if (!_tick.Enabled) _tick.Start();
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible) EnsureTick();
+    }
+
     /// <summary>Circular-arrows icon; spins while checking; accent dot when a new version is waiting.</summary>
     void DrawUpdateIcon(Graphics g, RectangleF r, float s)
     {
@@ -263,6 +351,9 @@ internal sealed class FlyoutForm : CardForm
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        bool lightMoved = _hot >= 0 && T.Glass;
+        _mouse = e.Location;
+        if (lightMoved) Invalidate();
         int hot = HitCard(e.Location);
         string btn = HitButton(e.Location);
         bool more = hot >= 0 && _expand > 0.5f && _items[hot].A?.Key == _expKey && MoreRect(Scaled(_items[hot].R)).Contains(e.Location);
@@ -276,6 +367,15 @@ internal sealed class FlyoutForm : CardForm
         base.OnMouseLeave(e);
         if (_hot != -1 || _hotBtn.Length > 0) { _hot = -1; _hotBtn = ""; Invalidate(); }
         if (!MenuOpen) SetExpanded(null);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        string b = HitButton(e.Location);
+        var rect = b switch { "bt" => _btBtn, "gear" => _gearBtn, "upd" => _updBtn, "banner" => _bannerRect, _ => RectangleF.Empty };
+        if (rect.IsEmpty && HitCard(e.Location) is int ci and >= 0) rect = Scaled(_items[ci].R);
+        if (!rect.IsEmpty) AddRipple(e.Location, rect);
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
@@ -341,6 +441,12 @@ internal sealed class FlyoutForm : CardForm
         _closing = true;
         int y0 = Top;
         Animator.Run(120, k => { if (!IsDisposed) Top = y0 + (int)(Px(10) * k); }, () => { if (!IsDisposed) Close(); });
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _tick?.Dispose();
+        base.Dispose(disposing);
     }
 
     public static void OpenBluetoothSettings()

@@ -22,6 +22,8 @@ internal sealed class AppHost : ApplicationContext
     readonly Dictionary<string, TrayIcon> _icons = new(StringComparer.Ordinal);
     readonly Dictionary<string, string> _iconSig = new(StringComparer.Ordinal);
     readonly Dictionary<string, DateTime> _lastPopup = new(StringComparer.Ordinal);
+    System.Windows.Forms.Timer? _chargeTimer;
+    int _chargePhase;
     readonly HashSet<string> _lowAlerted = new(StringComparer.Ordinal), _fullAlerted = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> _criticalShownAt = new(StringComparer.Ordinal);
     CriticalOverlay? _overlay;
@@ -363,10 +365,23 @@ internal sealed class AppHost : ApplicationContext
             }
             string tip = key == SummaryKey ? string.Join("\n", visible.Take(4).Select(Svc.Tooltip)) : Svc.Tooltip(a);
             if (_pending is not null) tip = UpdateTip + "\n" + tip; // first line: survives the 128-char tooltip limit
-            string sig = $"{a.WeakestLevel}|{a.Charging}|{tip}|{_s.IconStyle}|{a.Kind}|{_s.RichHover}|{_s.LowBatteryThreshold}|{dark}|{size}";
+            int phase = a.Charging ? _chargePhase : -1;
+            string sig = $"{a.WeakestLevel}|{a.Charging}|{phase}|{tip}|{_s.IconStyle}|{a.Kind}|{_s.RichHover}|{_s.LowBatteryThreshold}|{dark}|{size}";
             if (_iconSig.TryGetValue(key, out var old) && old == sig) continue;
-            icon.Set(IconRenderer.Device(a.WeakestLevel, a.Charging, _s.IconStyle, _s.LowBatteryThreshold, a.Kind), tip, _s.RichHover);
+            icon.Set(IconRenderer.Device(a.WeakestLevel, a.Charging, _s.IconStyle, _s.LowBatteryThreshold, a.Kind, phase), tip, _s.RichHover);
             _iconSig[key] = sig;
+        }
+
+        // Animated tray icon while something is charging (one cheap redraw every 0.7 s, stops when done).
+        bool anyCharging = want.Any(w => w.A.Charging);
+        if (anyCharging && _chargeTimer is null)
+        {
+            _chargeTimer = new System.Windows.Forms.Timer { Interval = 700 };
+            _chargeTimer.Tick += (_, _) => { _chargePhase = (_chargePhase + 1) % 3; SyncTray(); };
+        }
+        if (_chargeTimer is not null && _chargeTimer.Enabled != anyCharging)
+        {
+            if (anyCharging) _chargeTimer.Start(); else { _chargeTimer.Stop(); _chargePhase = 0; }
         }
 
         if (want.Count == 0)

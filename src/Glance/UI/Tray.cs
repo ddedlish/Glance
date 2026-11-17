@@ -276,7 +276,7 @@ internal static class IconRenderer
     /// Renders the tray icon at 8× the tray size and downsamples with high-quality bicubic filtering:
     /// crisp, evenly antialiased edges and digits at every DPI (16–32 px), no blur.
     /// </summary>
-    public static Icon Device(int? level, bool charging, IconStyle style, int low, DeviceKind kind = DeviceKind.Unknown)
+    public static Icon Device(int? level, bool charging, IconStyle style, int low, DeviceKind kind = DeviceKind.Unknown, int phase = -1)
     {
         int sz = Size, big = sz * Supersample;
         using var hi = new Bitmap(big, big, PixelFormat.Format32bppArgb);
@@ -289,6 +289,7 @@ internal static class IconRenderer
             Painter.SoftText = true;
             try
             {
+                _phase = charging ? phase : -1;
                 if (style == IconStyle.Device) DeviceIcon(g, big, level, charging, low, kind);
                 else if (Theme.Current.Glass)
                 {
@@ -363,6 +364,7 @@ internal static class IconRenderer
         float pad = 1.35f * u;
         var inner = RectangleF.Inflate(body, -pad, -pad);
         float frac = level is int l ? Math.Clamp(l / 100f, 0.08f, 1f) : 0;
+        if (charging) ChargeFlow(g, inner, frac, Math.Max(0.8f * u, rad - pad), fill);
         if (frac > 0)
         {
             var lv = new RectangleF(inner.X, inner.Y, Math.Max(inner.Height * 0.5f, inner.Width * frac), inner.Height);
@@ -471,6 +473,7 @@ internal static class IconRenderer
         using (var tb = new SolidBrush(dark ? Color.FromArgb(90, 255, 255, 255) : Color.FromArgb(70, 0, 0, 0)))
             g.FillPath(tb, tp);
         float frac = level is int l ? Math.Clamp(l / 100f, 0.1f, 1f) : 0;
+        if (charging) ChargeFlow(g, bar, frac, bar.Height / 2, fill);
         if (frac > 0)
         {
             var f = new RectangleF(bar.X, bar.Y, Math.Max(bar.Height, bar.Width * frac), bar.Height);
@@ -479,6 +482,20 @@ internal static class IconRenderer
             g.FillPath(lg, fp);
         }
         if (charging) Bolt(g, new RectangleF(10.2f * u, 0, 5.8f * u, 7.4f * u));
+    }
+
+    /// <summary>Charging animation frame (0–2) for the icon being rendered, −1 when static.</summary>
+    [ThreadStatic] static int _phase;
+
+    /// <summary>While charging, the fill «pours» towards full in three frames (lighter than the real level).</summary>
+    static void ChargeFlow(Graphics g, RectangleF track, float frac, float radius, Color fill)
+    {
+        if (_phase < 0 || frac >= 1) return;
+        float to = frac + (1 - frac) * (_phase + 1) / 3f;
+        var r = new RectangleF(track.X, track.Y, Math.Max(track.Height, track.Width * to), track.Height);
+        using var p = Painter.Round(r, radius);
+        using var b = new SolidBrush(Theme.Alpha(Lighten(fill, 0.35f), 90));
+        g.FillPath(b, p);
     }
 
     static readonly string DigitFamily = PickDigitFamily();
