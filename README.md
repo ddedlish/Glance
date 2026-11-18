@@ -1,4 +1,4 @@
-# Glance 2.0 — заряд аксессуаров в трее
+# Glance — заряд аксессуаров в трее
 
 **Автор: [ddedlish](https://steamcommunity.com/id/ddedlish/)** · Windows 10/11 · Linux · Glance Pro
 
