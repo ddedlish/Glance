@@ -656,6 +656,13 @@ internal static class IconRenderer
     public static Icon App()
     {
         int sz = Size;
+        // The app's own icon (gradient squircle with a battery), at the exact tray size from the multi-size .ico.
+        try
+        {
+            using var st = typeof(IconRenderer).Assembly.GetManifestResourceStream("app.ico");
+            if (st is not null) return new Icon(st, sz, sz);
+        }
+        catch (Exception e) { Log.Info("App icon: " + e.Message); }
         using var bmp = new Bitmap(sz, sz, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
         {

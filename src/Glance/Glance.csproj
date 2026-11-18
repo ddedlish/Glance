@@ -17,7 +17,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
 
-    <Version>3.1.5</Version>
+    <Version>3.1.6</Version>
     <Product>Glance</Product>
     <Authors>ddedlish</Authors>
     <AssemblyTitle>Glance — заряд аксессуаров · by ddedlish</AssemblyTitle>
@@ -55,6 +55,10 @@
 
   <ItemGroup>
     <AssemblyMetadata Include="GlanceChannel" Value="Beta" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
   </ItemGroup>
 
   <ItemGroup>
