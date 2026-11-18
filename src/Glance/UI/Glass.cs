@@ -39,6 +39,9 @@ internal static class GlassHost
             {
                 Painter.Target = glass ? buf.Bitmap : null;
                 Painter.TargetDc = glass ? buf.Dc : IntPtr.Zero;
+                Painter.ClassicDc = glass ? IntPtr.Zero : buf.Dc;
+                Painter.ClassicSize = size;
+                Painter.ClassicGraphics = glass ? null : g;
                 g.SetClip(dirty);
                 g.Clear(Color.Transparent);
                 bool prev = Painter.SoftText;
@@ -53,7 +56,7 @@ internal static class GlassHost
                     self?.Invoke(g);
                 }
                 catch (Exception e) { Log.Error("Paint " + c.GetType().Name, e); }
-                finally { Painter.SoftText = prev; Painter.Target = null; Painter.TargetDc = IntPtr.Zero; }
+                finally { Painter.SoftText = prev; Painter.Target = null; Painter.TargetDc = IntPtr.Zero; Painter.ClassicDc = IntPtr.Zero; Painter.ClassicGraphics = null; }
             }
             if (!glass) buf.MakeOpaque(dirty);
             buf.Present(hdc, dirty);

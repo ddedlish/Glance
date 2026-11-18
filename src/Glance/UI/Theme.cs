@@ -420,6 +420,52 @@ internal static class Painter
     /// <summary>The glass buffer being painted (enables ClearType on glass), null otherwise.</summary>
     [ThreadStatic] public static Bitmap? Target;
     [ThreadStatic] public static IntPtr TargetDc;
+    /// <summary>Classic: DC of the opaque DIB being painted, so ClearType blends with the real surface (see DrawClassic).</summary>
+    [ThreadStatic] public static IntPtr ClassicDc;
+    [ThreadStatic] public static Size ClassicSize;
+    [ThreadStatic] public static Graphics? ClassicGraphics;
+    static bool ClassicFailed;
+
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern int SaveDC(IntPtr hdc);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool RestoreDC(IntPtr hdc, int saved);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool GdiFlush();
+
+    /// <summary>
+    /// Classic text straight onto the window's DIB. Through a GDI+ bitmap Graphics, GDI saw a black surface under
+    /// the text, so ClearType edges were blended with black: dark text looked bold and smeared, coloured text dirty.
+    /// </summary>
+    static bool DrawClassic(Graphics g, string s, Font f, Color c, Rectangle rc, TextFormatFlags flags)
+    {
+        float[] el;
+        using (var m = g.Transform) el = m.Elements;
+        if (Math.Abs(el[0] - 1) > 0.001 || Math.Abs(el[3] - 1) > 0.001 || Math.Abs(el[1]) > 0.001 || Math.Abs(el[2]) > 0.001) return false;
+        int dx = (int)MathF.Round(el[4]), dy = (int)MathF.Round(el[5]);
+        var cb = g.ClipBounds;
+        var clipF = RectangleF.Intersect(new RectangleF(cb.X + dx, cb.Y + dy, cb.Width, cb.Height), new RectangleF(0, 0, ClassicSize.Width, ClassicSize.Height));
+        if (clipF.Width <= 0 || clipF.Height <= 0) return true;
+        var clip = Rectangle.FromLTRB((int)MathF.Floor(clipF.Left), (int)MathF.Floor(clipF.Top), (int)MathF.Ceiling(clipF.Right), (int)MathF.Ceiling(clipF.Bottom));
+        g.Flush(FlushIntention.Sync);
+        int saved = SaveDC(ClassicDc);
+        try
+        {
+            using var dg = Graphics.FromHdc(ClassicDc);
+            dg.SetClip(clip);
+            TextRenderer.DrawText(dg, s, f, new Rectangle(rc.X + dx, rc.Y + dy, rc.Width, rc.Height), Color.FromArgb(255, c),
+                flags | TextFormatFlags.PreserveGraphicsClipping);
+        }
+        catch (Exception e)
+        {
+            ClassicFailed = true;
+            Log.Error("Classic text", e);
+            return false;
+        }
+        finally
+        {
+            if (saved != 0) RestoreDC(ClassicDc, saved);
+            GdiFlush();
+        }
+        return true;
+    }
 
     /// <summary>Liquid Glass specular highlight: soft white sheen over the top of a rounded shape.</summary>
     public static void GlassSheen(Graphics g, RectangleF r, float radius, bool dark)
@@ -452,6 +498,7 @@ internal static class Painter
         var rc = Rectangle.FromLTRB((int)MathF.Floor(r.Left), (int)MathF.Floor(r.Top), (int)MathF.Ceiling(r.Right), (int)MathF.Ceiling(r.Bottom));
         if (!SoftText)
         {
+            if (ClassicDc != IntPtr.Zero && ReferenceEquals(g, ClassicGraphics) && !ClassicFailed && DrawClassic(g, s, f, c, rc, flags)) return;
             TextRenderer.DrawText(g, s, f, rc, Color.FromArgb(255, c), flags | TextFormatFlags.PreserveGraphicsClipping);
             return;
         }
