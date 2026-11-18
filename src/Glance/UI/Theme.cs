@@ -51,17 +51,17 @@ internal sealed class Theme
     public Color Bad => Dark ? Color.FromArgb(255, 120, 120) : Color.FromArgb(196, 43, 28);
     /// <summary>Accent used for text: always readable (≥ 4.5:1) on this theme's surfaces, whatever the accent.</summary>
     public Color AccentText => EnsureContrast(Dark ? Mix(Accent, Color.White, 0.30f) : Mix(Accent, Color.Black, 0.10f), ReferenceBg, 4.5);
-    /// <summary>Text on an accent fill: black or white, whichever contrasts more (WCAG).</summary>
-    public Color OnAccent => Contrast(AccentFill, Color.White) >= Contrast(AccentFill, Color.Black) ? Color.White : Color.Black;
+    /// <summary>Text on an accent fill: always white (the fill is deepened until white reads well), like Windows 11.</summary>
+    public Color OnAccent => Color.White;
     /// <summary>Accent fill for buttons/segments: deep enough that its label reads well (≥ 4.5:1).</summary>
     public Color AccentFill
     {
         get
         {
-            var fill = Dark ? Mix(Accent, Color.White, 0.12f) : Accent;
-            // pull towards the darker side until white or black text on it reaches 4.5:1
-            for (int i = 0; i < 12 && Math.Max(Contrast(fill, Color.White), Contrast(fill, Color.Black)) < 4.5; i++)
-                fill = Mix(fill, Color.Black, 0.08f);
+            var fill = Accent;
+            // deepen light accents (mint, graphite, sunset…) until white text on them reads clearly (≥ 4:1)
+            for (int i = 0; i < 16 && Contrast(fill, Color.White) < 4.0; i++)
+                fill = Mix(fill, Color.Black, 0.07f);
             return fill;
         }
     }

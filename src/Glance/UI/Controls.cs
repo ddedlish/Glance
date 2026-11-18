@@ -252,7 +252,7 @@ internal sealed class Segmented : ThemedControl
             var seg = new RectangleF(x, 2 * Sc, _widths[i], Height - 4 * Sc);
             if (i == _selected) Painter.FillRound(g, seg, 7 * Sc, T.AccentFill);
             else if (Hot && i == _hotIdx) Painter.FillRound(g, seg, 7 * Sc, T.SurfaceHover);
-            Painter.Text(g, _options[i], i == _selected ? Fonts.Strong(13 * Sc) : f, i == _selected ? T.OnAccent : T.Text, seg, StringAlignment.Center);
+            Painter.Text(g, _options[i], f, i == _selected ? T.OnAccent : T.Text, seg, StringAlignment.Center); // same weight as the others: no heavy, clipped label
             x += _widths[i];
         }
         if (Focused && ShowFocusCues) Painter.StrokeRound(g, r, 9 * Sc, T.Text, Math.Max(1, Sc));
