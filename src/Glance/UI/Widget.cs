@@ -7,10 +7,12 @@ namespace Glance;
 /// </summary>
 internal sealed class WidgetForm : CardForm
 {
-    const float W = 236, Row = 38, Pad = 10;
+    const float Tile = 74, Pad = 10, Head = 26;
     readonly AppSettings _s;
     readonly System.Windows.Forms.Timer _busy = new() { Interval = 3000 };
     public event Action? OpenPanel;
+    bool _hover, _hotClose;
+    RectangleF _close;
 
     public WidgetForm(AppSettings s) : base(false)
     {
@@ -26,10 +28,9 @@ internal sealed class WidgetForm : CardForm
     public void ShowWidget()
     {
         var wa = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 720);
-        var pt = _s.WidgetX == int.MinValue ? new Point(wa.Right - 260, wa.Top + 40) : new Point(_s.WidgetX, _s.WidgetY);
+        var pt = _s.WidgetX == int.MinValue ? new Point(wa.Right - 340, wa.Top + 40) : new Point(_s.WidgetX, _s.WidgetY);
         UseScaleAt(pt);
         Relayout();
-        // keep it on a visible screen
         var scr = Screen.FromPoint(pt).WorkingArea;
         pt.X = Math.Clamp(pt.X, scr.Left, Math.Max(scr.Left, scr.Right - Width));
         pt.Y = Math.Clamp(pt.Y, scr.Top, Math.Max(scr.Top, scr.Bottom - Height));
@@ -46,15 +47,24 @@ internal sealed class WidgetForm : CardForm
     }
 
     List<Accessory> Devices() => Svc.R.ConnectedDevices
-        .Where(a => !_s.For(a.Key).HideInTray)
-        .OrderByDescending(a => a.Level.HasValue || a.HasParts)
-        .ThenBy(a => a.WeakestLevel ?? 101)
-        .Take(8).ToList();
+        .Where(a => !_s.For(a.Key).HideInTray && (a.WeakestLevel is not null))
+        .OrderBy(a => a.WeakestLevel ?? 101)
+        .Take(6).ToList();
 
     protected override void Relayout()
     {
         int n = Math.Max(1, Devices().Count);
-        Size = new Size(Px(W), Px(Pad * 2 + 22 + n * Row));
+        // a horizontal strip of ring gauges — compact, glanceable
+        Size = new Size(Px(Pad * 2 + n * Tile + (n == 1 && Devices().Count == 0 ? 100 : 0)), Px(Head + Pad + Tile + 18));
+    }
+
+    /// <summary>Hide the widget (× on hover, or right-click → «Скрыть виджет»).</summary>
+    void HideWidget()
+    {
+        _s.Widget = false;
+        _s.Save();
+        _s.NotifyChanged(); // the host closes the widget
+        if (!IsDisposed) Close();
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -63,44 +73,95 @@ internal sealed class WidgetForm : CardForm
         Painter.Prepare(g);
         float s = Sc;
         var t = T;
-        Painter.Text(g, "Glance", Fonts.Strong(12 * s), t.SubText, new RectangleF(Pad * s + 2 * s, Pad * s - 2 * s, 120 * s, 20 * s));
-        Painter.Text(g, "PRO", Fonts.Strong(10 * s), t.AccentText, new RectangleF((W - Pad - 40) * s, Pad * s - 2 * s, 40 * s, 20 * s), StringAlignment.Far);
-        float y = (Pad + 22) * s;
+        Painter.Text(g, "Glance", Fonts.Strong(11.5f * s), t.SubText, new RectangleF(Pad * s + 2 * s, 6 * s, 120 * s, 18 * s));
+        _close = new RectangleF(Width - 28 * s, 5 * s, 22 * s, 22 * s);
+        if (_hover)
+        {
+            if (_hotClose) Painter.FillRound(g, _close, 11 * s, t.SurfaceHover);
+            Painter.Glyph(g, Glyphs.Close, 9 * s, _hotClose ? t.Text : t.SubText, _close);
+        }
         var list = Devices();
         if (list.Count == 0)
         {
-            Painter.Text(g, "Нет подключённых устройств", Fonts.Regular(12.5f * s), t.SubText, new RectangleF(Pad * s, y, (W - 2 * Pad) * s, Row * s));
+            Painter.Text(g, "Нет устройств с зарядом", Fonts.Regular(12 * s), t.SubText, new RectangleF(Pad * s, Head * s, Width - 2 * Pad * s, Tile * s), StringAlignment.Center);
             return;
         }
+        float x = Pad * s;
         foreach (var a in list)
         {
-            var row = new RectangleF(Pad * s, y, (W - 2 * Pad) * s, (Row - 4) * s);
-            Painter.FillRound(g, row, 10 * s, t.Surface);
-            Painter.GlassSheen(g, row, 10 * s, t.Dark);
-            Painter.Glyph(g, Glyphs.For(a.Kind), 14 * s, a.Profile.BrandColor ?? t.AccentText, new RectangleF(row.X + 6 * s, row.Y, 24 * s, row.Height));
-            int? lvl = a.WeakestLevel;
-            float pctW = 48 * s;
-            Painter.Text(g, a.DisplayName, Fonts.Regular(12.5f * s), t.Text, new RectangleF(row.X + 32 * s, row.Y + 2 * s, row.Width - 32 * s - pctW - 6 * s, row.Height - 10 * s));
-            string pct = lvl is int l ? $"{(int)MathF.Round(LevelTween.Value("W:" + a.Key, l))}%" : a.Link;
-            Painter.Text(g, pct, lvl is null ? Fonts.Regular(11 * s) : Fonts.Strong(13 * s), lvl is null ? t.SubText : t.LevelColor(lvl, a.Charging, Svc.Low),
-                new RectangleF(row.Right - pctW - 8 * s, row.Y + 2 * s, pctW, row.Height - 10 * s), StringAlignment.Far);
-            if (lvl is int lv)
-                Painter.Bar(g, new RectangleF(row.X + 32 * s, row.Bottom - 8 * s, row.Width - 40 * s, 3 * s), lv / 100f, t.BarColor(lvl, a.Charging, Svc.Low), Theme.Alpha(t.Track, 140));
+            var tile = new RectangleF(x + 3 * s, Head * s, (Tile - 6) * s, (Tile + 12) * s);
+            Painter.FillRound(g, tile, 16 * s, t.Surface);
+            Painter.GlassSheen(g, tile, 16 * s, t.Dark);
+            int lvl = a.WeakestLevel ?? 0;
+            float shown = LevelTween.Value("W:" + a.Key, lvl);
+            var color = t.BarColor(lvl, a.Charging, Svc.Low);
+            var ring = new RectangleF(tile.X + (tile.Width - 46 * s) / 2, tile.Y + 8 * s, 46 * s, 46 * s);
+            float th = 4.5f * s;
+            using (var tr = new Pen(Theme.Alpha(t.Track, 170), th)) g.DrawEllipse(tr, ring);
+            using (var arc = new Pen(color, th) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
+                if (shown > 0.5f) g.DrawArc(arc, ring, -90, 360f * shown / 100f);
+            Painter.GlyphPath(g, Glyphs.For(a.Kind), RectangleF.Inflate(ring, -11 * s, -11 * s), DeviceCard.KindColor(a.Kind), 1f, 0.4f * s);
             if (a.Charging)
-                Painter.Glyph(g, Glyphs.Bolt, 10 * s, t.Good, new RectangleF(row.Right - pctW - 22 * s, row.Y + 2 * s, 14 * s, row.Height - 10 * s));
-            y += Row * s;
+                Painter.Glyph(g, Glyphs.Bolt, 9 * s, t.Good, new RectangleF(ring.Right - 12 * s, ring.Y - 2 * s, 14 * s, 14 * s));
+            Painter.Text(g, $"{(int)MathF.Round(shown)}%", Fonts.Strong(12.5f * s), t.LevelColor(lvl, a.Charging, Svc.Low), new RectangleF(tile.X, ring.Bottom + 3 * s, tile.Width, 18 * s), StringAlignment.Center);
+            x += Tile * s;
         }
         if (LevelTween.Animating) Ui.Delay(33, () => { if (!IsDisposed) Invalidate(); });
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); _hover = true; Invalidate(); }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        // leaving to the non-client (drag) area still counts as inside
+        if (!ClientRectangle.Contains(PointToClient(Cursor.Position))) { _hover = false; _hotClose = false; Invalidate(); }
     }
 
     const int WM_NCHITTEST = 0x84, HTCAPTION = 2, WM_NCLBUTTONDBLCLK = 0xA3, WM_EXITSIZEMOVE = 0x232;
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_NCHITTEST) { m.Result = (IntPtr)HTCAPTION; return; } // drag from anywhere
+        if (m.Msg == WM_NCHITTEST)
+        {
+            var p = PointToClient(new Point((short)((long)m.LParam & 0xFFFF), (short)(((long)m.LParam >> 16) & 0xFFFF)));
+            bool hotClose = _close.Contains(p);
+            if (!_hover || hotClose != _hotClose) { _hover = true; _hotClose = hotClose; Invalidate(); TrackLeave(); }
+            m.Result = hotClose ? (IntPtr)1 /*HTCLIENT: the × is clickable*/ : (IntPtr)HTCAPTION; // drag from anywhere else
+            return;
+        }
+        if (m.Msg == 0x2A2 /*WM_NCMOUSELEAVE*/ || m.Msg == 0x2A3 /*WM_MOUSELEAVE*/)
+        {
+            if (!Bounds.Contains(Cursor.Position)) { _hover = false; _hotClose = false; Invalidate(); }
+        }
+        if (m.Msg == 0xA5 /*WM_NCRBUTTONUP*/)
+        {
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Открыть панель", null, (_, _) => OpenPanel?.Invoke());
+            menu.Items.Add("Скрыть виджет", null, (_, _) => Ui.Post(HideWidget));
+            menu.Closed += (_, _) => Ui.Post(menu.Dispose);
+            menu.Show(Cursor.Position);
+            return;
+        }
         if (m.Msg == WM_NCLBUTTONDBLCLK) { OpenPanel?.Invoke(); return; }
         if (m.Msg == WM_EXITSIZEMOVE) { _s.WidgetX = Left; _s.WidgetY = Top; _s.Save(); }
         base.WndProc(ref m);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (e.Button == MouseButtons.Left && _close.Contains(e.Location)) Ui.Post(HideWidget);
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct TRACKMOUSEEVENT { public int cbSize; public uint dwFlags; public IntPtr hwndTrack; public uint dwHoverTime; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool TrackMouseEvent(ref TRACKMOUSEEVENT e);
+
+    void TrackLeave()
+    {
+        var tme = new TRACKMOUSEEVENT { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<TRACKMOUSEEVENT>(), dwFlags = 0x2 | 0x10 /*LEAVE|NONCLIENT*/, hwndTrack = Handle };
+        TrackMouseEvent(ref tme);
     }
 
     protected override void Dispose(bool disposing)

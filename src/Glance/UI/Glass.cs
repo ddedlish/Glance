@@ -37,6 +37,7 @@ internal static class GlassHost
             if (dirty.IsEmpty) return true;
             using (var g = buf.Begin(size))
             {
+                Painter.Target = glass ? buf.Bitmap : null;
                 g.SetClip(dirty);
                 g.Clear(Color.Transparent);
                 bool prev = Painter.SoftText;
@@ -51,7 +52,7 @@ internal static class GlassHost
                     self?.Invoke(g);
                 }
                 catch (Exception e) { Log.Error("Paint " + c.GetType().Name, e); }
-                finally { Painter.SoftText = prev; }
+                finally { Painter.SoftText = prev; Painter.Target = null; }
             }
             if (!glass) buf.MakeOpaque(dirty);
             buf.Present(hdc, dirty);
@@ -127,6 +128,8 @@ internal sealed class AlphaBuffer : IDisposable
     IntPtr _dib, _bits, _dc, _old;
     Bitmap? _bmp;
     Size _size;
+
+    public Bitmap? Bitmap => _bmp;
 
     public Graphics Begin(Size size)
     {

@@ -417,6 +417,8 @@ internal static class Painter
     /// Otherwise text uses GDI/ClearType via TextRenderer — noticeably sharper on opaque window surfaces.
     /// </summary>
     [ThreadStatic] public static bool SoftText;
+    /// <summary>The glass buffer being painted (enables ClearType on glass), null otherwise.</summary>
+    [ThreadStatic] public static Bitmap? Target;
 
     /// <summary>Liquid Glass specular highlight: soft white sheen over the top of a rounded shape.</summary>
     public static void GlassSheen(Graphics g, RectangleF r, float radius, bool dark)
@@ -452,6 +454,8 @@ internal static class Painter
             TextRenderer.DrawText(g, s, f, rc, Color.FromArgb(255, c), flags | TextFormatFlags.PreserveGraphicsClipping);
             return;
         }
+        // Glass: real ClearType, blended onto the actual pixels of the surface under the text (see GlassClearType).
+        if (Target is not null && f.Size < 60 && GlassClearType.TryDraw(g, Target, s, f, c, rc, flags)) return;
         if (rc.Width > 0 && rc.Height > 0 && (long)rc.Width * rc.Height <= 1_500_000 && f.Size < 120)
         {
             // Text must never take the app down: on any GDI trouble fall back to GDI+ text below.
@@ -569,6 +573,84 @@ internal static class Painter
 /// ClearType into an opaque mask, and the per-subpixel coverage is turned into premultiplied colour + alpha.
 /// The result keeps the sharp stems of normal Windows text on any background. Bitmaps are cached (LRU).
 /// </summary>
+/// <summary>
+/// Sharpest possible text on glass: native ClearType rendered against the real surface under the text.
+/// The glass surfaces (tint + cards) are ~70 % opaque, so the pixels already in the buffer, flattened over a
+/// typical backdrop colour, are what the text really sits on. GDI draws ClearType onto that, and the result is
+/// written back keeping the surface's alpha. Falls back to grayscale where the surface is too transparent,
+/// rotated/scaled, or outside the buffer.
+/// </summary>
+internal static class GlassClearType
+{
+    public static bool TryDraw(Graphics g, Bitmap target, string s, Font f, Color c, Rectangle rc, TextFormatFlags flags)
+    {
+        try
+        {
+            var m = g.Transform;
+            var el = m.Elements;
+            m.Dispose();
+            if (Math.Abs(el[0] - 1) > 0.001 || Math.Abs(el[3] - 1) > 0.001 || Math.Abs(el[1]) > 0.001 || Math.Abs(el[2]) > 0.001) return false;
+            int dx = (int)MathF.Round(el[4]), dy = (int)MathF.Round(el[5]);
+            var dev = new Rectangle(rc.X + dx, rc.Y + dy, rc.Width, rc.Height);
+            var clipW = g.ClipBounds; // world coordinates
+            var clip = Rectangle.Round(new RectangleF(clipW.X + dx, clipW.Y + dy, clipW.Width, clipW.Height));
+            var area = Rectangle.Intersect(Rectangle.Intersect(dev, clip), new Rectangle(0, 0, target.Width, target.Height));
+            if (area.Width <= 0 || area.Height <= 0) return true; // nothing visible
+            if ((long)area.Width * area.Height > 600_000) return false;
+
+            g.Flush(System.Drawing.Drawing2D.FlushIntention.Sync); // everything drawn so far must be in the pixels we read
+            bool dark = Theme.Current.Dark;
+            int bdR = dark ? 24 : 236, bdG = dark ? 26 : 238, bdB = dark ? 34 : 243; // typical blurred backdrop
+            var data = target.LockBits(area, ImageLockMode.ReadWrite, PixelFormat.Format32bppPArgb);
+            try
+            {
+                int n = area.Width * 4;
+                var px = new byte[n * area.Height];
+                for (int y = 0; y < area.Height; y++) System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + y * data.Stride, px, y * n, n);
+                // average opacity check: too transparent → grayscale path
+                long aSum = 0;
+                for (int i = 3; i < px.Length; i += 4) aSum += px[i];
+                if (aSum < 0.6 * 255 * (px.Length / 4)) return false;
+
+                using var flat = new Bitmap(area.Width, area.Height, PixelFormat.Format32bppRgb);
+                var fd = flat.LockBits(new Rectangle(0, 0, area.Width, area.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
+                var fp = new byte[px.Length];
+                for (int i = 0; i < px.Length; i += 4)
+                {
+                    int a = px[i + 3], inv = 255 - a;
+                    fp[i] = (byte)Math.Min(255, px[i] + inv * bdB / 255);
+                    fp[i + 1] = (byte)Math.Min(255, px[i + 1] + inv * bdG / 255);
+                    fp[i + 2] = (byte)Math.Min(255, px[i + 2] + inv * bdR / 255);
+                    fp[i + 3] = 255;
+                }
+                for (int y = 0; y < area.Height; y++) System.Runtime.InteropServices.Marshal.Copy(fp, y * n, fd.Scan0 + y * fd.Stride, n);
+                flat.UnlockBits(fd);
+
+                using (var fg = Graphics.FromImage(flat))
+                    TextRenderer.DrawText(fg, s, f, new Rectangle(dev.X - area.X, dev.Y - area.Y, dev.Width, dev.Height), Color.FromArgb(255, c), flags);
+
+                fd = flat.LockBits(new Rectangle(0, 0, area.Width, area.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+                var tp = new byte[px.Length];
+                for (int y = 0; y < area.Height; y++) System.Runtime.InteropServices.Marshal.Copy(fd.Scan0 + y * fd.Stride, tp, y * n, n);
+                flat.UnlockBits(fd);
+                for (int i = 0; i < px.Length; i += 4)
+                {
+                    if (tp[i] == fp[i] && tp[i + 1] == fp[i + 1] && tp[i + 2] == fp[i + 2]) continue; // untouched by text
+                    int a = Math.Max((int)px[i + 3], 200), inv = 255 - a;
+                    px[i] = (byte)Math.Clamp(tp[i] - inv * bdB / 255, 0, a);
+                    px[i + 1] = (byte)Math.Clamp(tp[i + 1] - inv * bdG / 255, 0, a);
+                    px[i + 2] = (byte)Math.Clamp(tp[i + 2] - inv * bdR / 255, 0, a);
+                    px[i + 3] = (byte)a;
+                }
+                for (int y = 0; y < area.Height; y++) System.Runtime.InteropServices.Marshal.Copy(px, y * n, data.Scan0 + y * data.Stride, n);
+                return true;
+            }
+            finally { target.UnlockBits(data); }
+        }
+        catch { return false; }
+    }
+}
+
 internal static class AlphaText
 {
     /// <summary>Set after the first failure so the error is logged once.</summary>

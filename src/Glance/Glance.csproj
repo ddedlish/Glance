@@ -17,7 +17,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
 
-    <Version>4.2.0</Version>
+    <Version>4.2.1</Version>
     <Product>Glance</Product>
     <Authors>ddedlish</Authors>
     <AssemblyTitle>Glance — заряд аксессуаров · by ddedlish</AssemblyTitle>
@@ -42,9 +42,11 @@
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
-    <!-- Compressed bundle (~70 MB). No ReadyToRun: it recompiles the bundled runtime on every build, which made
-         delta updates download ~50 MB instead of a few hundred KB; the startup gain was too small to justify it. -->
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Uncompressed bundle: the compressor's output differs between build machines (CPU-specific zlib), which made
+         every other delta update ~50 MB. Uncompressed, unchanged runtime files are byte-identical → updates stay
+         a few hundred KB; the runtime is also memory-mapped instead of unpacked (faster start, less RAM).
+         No ReadyToRun: it recompiles the runtime per build and breaks deltas the same way. -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <PublishReadyToRun>false</PublishReadyToRun>
   </PropertyGroup>
 
@@ -54,7 +56,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AssemblyMetadata Include="GlanceChannel" Value="Beta" />
+    <AssemblyMetadata Include="GlanceChannel" Value="Alpha" />
   </ItemGroup>
 
   <ItemGroup>

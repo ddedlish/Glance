@@ -41,21 +41,32 @@ internal sealed class UpdateService
     {
         if (!AppInfo.UpdatesConfigured) return null;
         // First repository that answers wins (the public releases repo; the code repo may be private → 404).
-        HttpResponseMessage? resp = null;
+        byte[]? body = null;
         foreach (var repo in AppInfo.UpdateRepos)
         {
-            var req = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repo}/releases/latest");
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repo}/releases/latest");
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-            var r = await Http.SendAsync(req, ct).ConfigureAwait(false);
-            if (r.StatusCode == System.Net.HttpStatusCode.NotFound) { r.Dispose(); continue; }
-            resp = r;
+            // Conditional request: an unchanged release answers 304, which GitHub does not count against the limit.
+            if (ETags.TryGetValue(repo, out var cached)) req.Headers.TryAddWithoutValidation("If-None-Match", cached.ETag);
+            using var r = await Http.SendAsync(req, ct).ConfigureAwait(false);
+            if (r.StatusCode == System.Net.HttpStatusCode.NotFound) continue;
+            if (r.StatusCode == System.Net.HttpStatusCode.NotModified && cached.Body is not null) { body = cached.Body; break; }
+            if (r.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.TooManyRequests)
+            {
+                // API limit (60 requests/hour per IP, shared with everything on this network): read the
+                // public release page redirect instead — no API, no limit.
+                Log.Info($"GitHub API limit ({(int)r.StatusCode}) — using the release page");
+                var viaPage = await CheckViaReleasePageAsync(repo, ct).ConfigureAwait(false);
+                if (viaPage is not null || AppInfo.UpdateRepos[^1] == repo) return viaPage;
+                continue;
+            }
+            r.EnsureSuccessStatusCode();
+            body = await r.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            if (r.Headers.ETag is { } tag) ETags[repo] = (tag.ToString(), body);
             break;
         }
-        if (resp is null) return null;
-        using var _resp = resp;
-        resp.EnsureSuccessStatusCode();
-        await using var st = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        using var doc = await JsonDocument.ParseAsync(st, cancellationToken: ct).ConfigureAwait(false);
+        if (body is null) return null;
+        using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
         if (root.TryGetProperty("draft", out var d) && d.ValueKind == JsonValueKind.True) return null;
@@ -83,6 +94,31 @@ internal sealed class UpdateService
         if (asset is null || sums is null || size > MaxAssetBytes) return null;
         string notes = root.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() ?? "" : "";
         return new Release(v, tag, notes, asset, AssetName, sums, size, blocks);
+    }
+
+    static readonly Dictionary<string, (string ETag, byte[]? Body)> ETags = new();
+    static readonly HttpClient NoRedirect = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
+
+    /// <summary>
+    /// Fallback without the API: github.com/{repo}/releases/latest redirects to …/tag/vX.Y.Z; asset URLs follow
+    /// the fixed pattern. The file is still verified against SHA256SUMS before anything is replaced.
+    /// </summary>
+    async Task<Release?> CheckViaReleasePageAsync(string repo, CancellationToken ct)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://github.com/{repo}/releases/latest");
+            req.Headers.UserAgent.ParseAdd($"Glance/{Fmt.Ver(AppInfo.Version)}");
+            using var r = await NoRedirect.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            var loc = r.Headers.Location?.ToString() ?? "";
+            int i = loc.LastIndexOf("/tag/", StringComparison.Ordinal);
+            if (i < 0) return null;
+            string tag = Uri.UnescapeDataString(loc[(i + 5)..]);
+            if (!Version.TryParse(tag.TrimStart('v', 'V'), out var v) || Normalize(v) <= Normalize(AppInfo.Version)) return null;
+            string bas = $"https://github.com/{repo}/releases/download/{Uri.EscapeDataString(tag)}/";
+            return new Release(v, tag, "", bas + AssetName, AssetName, bas + "SHA256SUMS", 0, bas + AssetName + ".blocks");
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { Log.Info("Release page check: " + e.Message); return null; }
     }
 
     static bool IsTrustedUrl(string url) =>
