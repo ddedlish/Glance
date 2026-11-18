@@ -285,7 +285,7 @@ internal sealed class ToastForm : CardForm
                 new RectangleF(W - 16 * s - pw, y - 4 * s, pw, 32 * s), StringAlignment.Far);
             string note = a.Charging
                 ? (Svc.Estimate(a) is TimeSpan c ? $"Заряжается · до полного ~{Fmt.Duration(c)}" : "Заряжается")
-                : Svc.Estimate(a) is TimeSpan e ? $"Хватит примерно на {Fmt.Duration(e)}"
+                : Svc.Estimate(a) is TimeSpan left ? $"Хватит примерно на {Fmt.Duration(left)}"
                 : a.SystemSource switch { "Windows" => "по данным Windows", "GATT" => "Bluetooth LE", null => "", _ => "контроллер" };
             Painter.Text(g, note, Fonts.Regular(12 * s), t.SubText, new RectangleF(16 * s, bar.Bottom + 6 * s, bar.Width, 18 * s));
             y += 46 * s;
