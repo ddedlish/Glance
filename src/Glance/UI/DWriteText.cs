@@ -66,7 +66,7 @@ internal static class DWriteText
         foreach (var suffix in new[] { " Semibold", " Semib" })
             if (family.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) { family = family[..^suffix.Length]; weight = FontWeight.SemiBold; }
         float px = f.Unit == GraphicsUnit.Pixel ? f.Size : f.SizeInPoints * 96f / 72f;
-        fmt = _dw!.CreateTextFormat(family, weight, f.Italic ? Vortice.DirectWrite.FontStyle.Italic : Vortice.DirectWrite.FontStyle.Normal, FontStretch.Normal, px, "ru-ru");
+        fmt = _dw!.CreateTextFormat(family, null!, weight, f.Italic ? Vortice.DirectWrite.FontStyle.Italic : Vortice.DirectWrite.FontStyle.Normal, FontStretch.Normal, px, "ru-ru");
         fmt.TextAlignment = (flags & TextFormatFlags.HorizontalCenter) != 0 ? TextAlignment.Center : (flags & TextFormatFlags.Right) != 0 ? TextAlignment.Trailing : TextAlignment.Leading;
         fmt.ParagraphAlignment = (flags & TextFormatFlags.VerticalCenter) != 0 ? ParagraphAlignment.Center : (flags & TextFormatFlags.Bottom) != 0 ? ParagraphAlignment.Far : ParagraphAlignment.Near;
         fmt.WordWrapping = (flags & TextFormatFlags.WordBreak) != 0 ? WordWrapping.Wrap : WordWrapping.NoWrap;
