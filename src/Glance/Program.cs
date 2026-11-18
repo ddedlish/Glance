@@ -78,21 +78,57 @@ internal static class Program
             return 0;
         }
 
+        // Crash-safe start: a marker file lives only while Glance is starting. If it is still there, the last
+        // start failed → this one runs in safe mode (classic look, no effects). A failed normal start also
+        // retries right away in safe mode, so Glance comes up instead of silently quitting.
+        SafeMode.Begin();
         try
         {
-            UpdateService.CleanupAfterUpdate();
-            using var host = new AppHost(autostart, afterUpdate);
-            Application.Run(host);
-            return 0;
-        }
-        catch (Exception e)
+        for (int attempt = 0; ; attempt++)
         {
-            Log.Error("Startup", e);
-            return 1;
+            try
+            {
+                UpdateService.CleanupAfterUpdate();
+                using var host = new AppHost(autostart, afterUpdate);
+                Application.Run(host);
+                SafeMode.End();
+                return 0;
+            }
+            catch (Exception e)
+            {
+                Log.Error(SafeMode.On ? "Startup (safe mode)" : "Startup", e);
+                if (SafeMode.On || attempt > 0) return 1;
+                SafeMode.On = true;
+            }
+        }
         }
         finally
         {
             try { mutex.ReleaseMutex(); } catch { }
+        }
+    }
+
+    /// <summary>Safe mode after a failed start: classic look, no glass, no animations, no widget.</summary>
+    internal static class SafeMode
+    {
+        public static bool On;
+        static string Flag => Path.Combine(AppInfo.DataDir, "starting.flag");
+
+        public static void Begin()
+        {
+            try
+            {
+                Directory.CreateDirectory(AppInfo.DataDir);
+                if (File.Exists(Flag)) { On = true; Log.Info("Previous start did not finish — safe mode"); }
+                File.WriteAllText(Flag, DateTime.Now.ToString("O"));
+            }
+            catch { }
+        }
+
+        /// <summary>Called once Glance has been running fine for a while (and on clean exit).</summary>
+        public static void End()
+        {
+            try { File.Delete(Flag); } catch { }
         }
     }
 

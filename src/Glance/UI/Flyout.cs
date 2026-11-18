@@ -83,6 +83,12 @@ internal sealed class FlyoutForm : CardForm
         _items.Clear();
         float y = Header;
         var entries = Entries();
+        _hero = PickHero();
+        if (_hero is not null)
+        {
+            _items.Add((null, HeroTag, new RectangleF(Side, y, W - 2 * Side, HeroH)));
+            y += HeroH + Gap;
+        }
         foreach (var (a, section) in entries)
         {
             float h = section is not null ? 26 : DeviceCard.Height(a!, true);
@@ -140,7 +146,8 @@ internal sealed class FlyoutForm : CardForm
             float arr = Arrive(i);
             if (arr < 1) r.Offset(0, (1 - arr) * 16 * s);
             if (r.Bottom < view.Top || r.Top > view.Bottom) continue;
-            if (section is not null)
+            if (section == HeroTag) DrawHero(g, r, s, Arrive(i + 3));
+            else if (section is not null)
                 Painter.Text(g, section, Fonts.Strong(12 * s), t.SubText, new RectangleF(r.X + 4 * s, r.Y + 4 * s, r.Width, r.Height - 4 * s));
             else
             {
@@ -225,6 +232,62 @@ internal sealed class FlyoutForm : CardForm
         _expAnim = Animator.Run(150, p => { if (IsDisposed) return; _expand = from + (1 - from) * p; Rebuild(); }, () => _expAnim = null);
     }
 
+    // ───────────── Hero: the device that needs attention first ─────────────
+
+    const string HeroTag = "\u0001hero";
+    const float HeroH = 112;
+    Accessory? _hero;
+
+    /// <summary>The weakest discharging device (or the one charging) — shown big at the top.</summary>
+    static Accessory? PickHero()
+    {
+        var withLevel = Svc.R.ConnectedDevices.Where(a => a.WeakestLevel is not null).ToList();
+        if (withLevel.Count == 0) return null;
+        return withLevel.Where(a => !a.Charging).MinBy(a => a.WeakestLevel) ?? withLevel.MinBy(a => a.WeakestLevel);
+    }
+
+    /// <summary>Big glass card with an animated ring gauge, the name, and what the level means in time.</summary>
+    void DrawHero(Graphics g, RectangleF r, float s, float grow)
+    {
+        if (_hero is not Accessory a || a.WeakestLevel is not int lvl) return;
+        var t = T;
+        Painter.FillRound(g, r, 16 * s, t.Surface);
+        Painter.GlassSheen(g, r, 16 * s, t.Dark);
+        Painter.StrokeRound(g, r, 16 * s, t.Border, Math.Max(1, s));
+
+        // ring gauge
+        float d = 76 * s, th = 8 * s;
+        var ring = new RectangleF(r.X + 18 * s, r.Y + (r.Height - d) / 2, d, d);
+        float shown = LevelTween.Value("H:" + a.Key, lvl) * grow;
+        var color = t.BarColor(lvl, a.Charging, Svc.Low);
+        using (var track = new Pen(Theme.Alpha(t.Track, 170), th) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
+            g.DrawEllipse(track, ring);
+        if (shown > 0.5f)
+        {
+            float sweep = 360f * shown / 100f;
+            if (t.Glass)
+                using (var glow = new Pen(Theme.Alpha(color, 60), th * 2.2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
+                    g.DrawArc(glow, ring, -90, sweep);
+            using var arc = new Pen(color, th) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+            g.DrawArc(arc, ring, -90, sweep);
+        }
+        Painter.Text(g, $"{(int)MathF.Round(shown)}%", Fonts.Big(19 * s), t.Text, ring, StringAlignment.Center);
+        if (a.Charging)
+            Painter.Glyph(g, Glyphs.Bolt, 11 * s, Theme.Alpha(t.Good, (int)(175 + 80 * MathF.Sin(Clock.ElapsedMilliseconds / 260f))),
+                new RectangleF(ring.X, ring.Bottom - 26 * s, ring.Width, 16 * s));
+
+        // text
+        float tx = ring.Right + 18 * s, tw = r.Right - tx - 14 * s;
+        Painter.Glyph(g, Glyphs.For(a.Kind), 13 * s, a.Profile.BrandColor ?? t.AccentText, new RectangleF(tx - 2 * s, r.Y + 18 * s, 18 * s, 22 * s));
+        Painter.Text(g, a.DisplayName, Fonts.Strong(15 * s), t.Text, new RectangleF(tx + 20 * s, r.Y + 18 * s, tw - 20 * s, 22 * s));
+        string line = a.Charging
+            ? (Svc.Estimate(a) is TimeSpan c ? $"Заряжается · до полного ~{Fmt.Duration(c)}" : "Заряжается")
+            : (Svc.Estimate(a) is TimeSpan e ? $"Хватит примерно на {Fmt.Duration(e)}" : "Считаем, на сколько хватит…");
+        Painter.Text(g, line, Fonts.Regular(13 * s), t.Text, new RectangleF(tx, r.Y + 46 * s, tw, 20 * s));
+        string hint = a.Charging ? a.Link : lvl <= Svc.Low ? "Пора зарядить" : lvl <= 40 ? $"{a.Link} · разрядится первым" : $"{a.Link} · всё в порядке";
+        Painter.Text(g, hint, Fonts.Regular(12 * s), lvl <= Svc.Low && !a.Charging ? Theme.VividRed : t.SubText, new RectangleF(tx, r.Y + 70 * s, tw, 18 * s));
+    }
+
     // ───────────── «wow» layer: cursor light, ripples, live ticking ─────────────
 
     Point _mouse;
@@ -296,7 +359,7 @@ internal sealed class FlyoutForm : CardForm
             _tick.Tick += (_, _) =>
             {
                 if (IsDisposed || !Visible) { _tick!.Stop(); return; }
-                bool alive = _ripples.Count > 0 || LevelTween.Animating || Svc.R.ConnectedDevices.Any(a => a.Charging);
+                bool alive = _ripples.Count > 0 || LevelTween.Animating || _openT < 1 || Svc.R.ConnectedDevices.Any(a => a.Charging);
                 if (!alive) { _tick!.Stop(); return; }
                 Invalidate();
             };

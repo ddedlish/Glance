@@ -296,6 +296,7 @@ internal static class Animator
 
     public static Anim Run(int ms, Action<float> step, Action? done = null, Func<float, float>? ease = null)
     {
+        if (Program.SafeMode.On) ms = 1; // safe mode: no motion
         var a = new Anim { Start = Clock.ElapsedMilliseconds, Duration = Math.Max(1, ms), Step = step, Done = done, Ease = ease ?? EaseOut };
         Active.Add(a);
         if (_timer is null)

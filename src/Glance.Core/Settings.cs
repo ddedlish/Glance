@@ -45,6 +45,10 @@ public sealed class AppSettings
     public bool CriticalSound { get; set; } = true;
     /// <summary>Glance's own sounds (glass or classic set) for connect, disconnect, low, full and updates.</summary>
     public bool Sounds { get; set; } = true;
+    /// <summary>Early «скоро сядет» warning from the discharge history (&lt; 1.5 h left).</summary>
+    public bool SmartReminders { get; set; } = true;
+    /// <summary>Last version whose «Что нового» was shown automatically (major releases).</summary>
+    public string? SeenVersion { get; set; }
     /// <summary>Pro sound pack: 0 = follows the style (Glass/Classic), 1 = Неон, 2 = Маримба.</summary>
     public int SoundPack { get; set; }
 

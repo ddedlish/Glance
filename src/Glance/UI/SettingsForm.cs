@@ -205,6 +205,7 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         var crit = new Stepper(sc, _s.CriticalThreshold, 3, 20, 1, v => $"{v}%");
         crit.ValueChanged += () => { _s.CriticalThreshold = crit.Value; _s.NotifyChanged(); };
         Row("Порог критического заряда", "", crit);
+        Row("Умные напоминания", "Заранее предупредит, если по истории разряда устройства хватит меньше чем на полтора часа", Toggle(_s.SmartReminders, v => _s.SmartReminders = v));
         Row("Звуки Glance", "Свои наборы: стеклянные колокольчики в Liquid Glass, чёткие сигналы в классике. Ночью и в играх молчат", Toggle(_s.Sounds, v => _s.Sounds = v));
         var vol = new Stepper(sc, _s.SoundVolume, 10, 100, 10, v => $"{v}%");
         vol.ValueChanged += () => { _s.SoundVolume = vol.Value; _s.NotifyChanged(); Sounds.Play(SoundKind.Connected, _s, preview: true); };

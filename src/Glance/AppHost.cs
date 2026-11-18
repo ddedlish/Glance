@@ -23,6 +23,7 @@ internal sealed class AppHost : ApplicationContext
     readonly Dictionary<string, string> _iconSig = new(StringComparer.Ordinal);
     readonly Dictionary<string, DateTime> _lastPopup = new(StringComparer.Ordinal);
     System.Windows.Forms.Timer? _chargeTimer;
+    readonly HashSet<string> _smartAlerted = new(StringComparer.Ordinal);
     int _chargePhase;
     readonly HashSet<string> _lowAlerted = new(StringComparer.Ordinal), _fullAlerted = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> _criticalShownAt = new(StringComparer.Ordinal);
@@ -47,7 +48,7 @@ internal sealed class AppHost : ApplicationContext
         Pro.Apply(_s.LicenseKey);
         Pro.Changed += () => Ui.Post(() => { Theme.SetAccent(Pro.IsActive ? _s.AccentPreset : 0); SyncWidget(); _flyout?.Invalidate(); });
         Theme.SetAccent(Pro.IsActive ? _s.AccentPreset : 0);
-        Theme.SetGlass(_s.LiquidGlass);
+        Theme.SetGlass(_s.LiquidGlass && !Program.SafeMode.On);
         _h = new HistoryStore();
         _r = new DeviceRegistry(_s, _h);
         Svc.Init(_s, _h, _r);
@@ -90,7 +91,19 @@ internal sealed class AppHost : ApplicationContext
             });
 
         ScheduleUpdateChecks();
-        Ui.Delay(1500, SyncWidget);
+        if (!Program.SafeMode.On) Ui.Delay(1500, SyncWidget);
+        Ui.Delay(20_000, Program.SafeMode.End); // ran fine for 20 s → the next start is normal again
+        // A new major version (e.g. 3 → 4) opens «Что нового» once after the update.
+        string cur = AppInfo.Version.ToString(3);
+        if (_s.SeenVersion != cur)
+        {
+            bool major = Version.TryParse(_s.SeenVersion, out var seen) ? seen.Major != AppInfo.Version.Major : afterUpdate; // older builds didn't record it
+            _s.SeenVersion = cur;
+            _s.Save();
+            if (major && afterUpdate && !Program.SafeMode.On) Ui.Delay(3500, WhatsNewForm.ShowWindow);
+        }
+        if (Program.SafeMode.On)
+            Ui.Delay(2500, () => _toasts.ShowMessage("Безопасный режим", "Прошлый запуск Glance завершился ошибкой, поэтому сейчас он работает без эффектов. Следующий запуск будет обычным.", Glyphs.Warning));
         Ui.Delay(30_000, TrimMemory);
         Log.Info($"Started {AppInfo.VersionText}");
     }
@@ -296,6 +309,20 @@ internal sealed class AppHost : ApplicationContext
         }
 
         CheckCritical(a, lv, charging);
+
+        // Smart reminder: from the device's own discharge history, warn early when < 1.5 h is left,
+        // before it even reaches the low threshold (once per discharge).
+        if (_s.SmartReminders && !muted)
+        {
+            if (charging) _smartAlerted.Remove(a.Key);
+            else if (lv > lowAt && !_smartAlerted.Contains(a.Key) && Svc.Estimate(a) is TimeSpan left && left < TimeSpan.FromMinutes(90)
+                     && !(_s.RespectFocus && Native.UserIsBusy()) && !_s.IsQuietNow())
+            {
+                _smartAlerted.Add(a.Key);
+                _toasts.ShowMessage($"{a.DisplayName} скоро сядет", $"Осталось {lv}% — по истории разряда хватит примерно на {Fmt.Duration(left)}. Лучше зарядить заранее.", Glyphs.Clock);
+                Sounds.Play(SoundKind.Low, _s);
+            }
+        }
 
         if (_s.FullChargeAlert && !muted)
         {
@@ -594,7 +621,7 @@ internal sealed class AppHost : ApplicationContext
     void OnSettingsChanged()
     {
         Theme.SetAccent(Pro.IsActive ? _s.AccentPreset : 0);
-        Theme.SetGlass(_s.LiquidGlass);
+        Theme.SetGlass(_s.LiquidGlass && !Program.SafeMode.On);
         SyncWidget();
         _tray.SetHotkey(_s.Hotkey);
         RefreshPolling();
@@ -703,7 +730,7 @@ internal sealed class AppHost : ApplicationContext
     void SyncWidget()
     {
         if (_exiting) return;
-        bool want = Pro.IsActive && _s.Widget;
+        bool want = Pro.IsActive && _s.Widget && !Program.SafeMode.On;
         if (want && _widget is null)
         {
             _widget = new WidgetForm(_s);
