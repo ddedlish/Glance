@@ -588,3 +588,151 @@ internal static class Painter
 /// The result keeps the sharp stems of normal Windows text on any background. Bitmaps are cached (LRU).
 /// </summary>
 
+internal static class AlphaText
+{
+    /// <summary>Set after the first failure so the error is logged once.</summary>
+    public static bool Failed;
+    // Coverage → alpha curves: light text on dark glass gets a touch more weight (thin strokes stay solid),
+    // dark text on light glass a touch less (avoids a bold, smeared look).
+    static readonly byte[] GammaLight = Curve(0.95), GammaDark = Curve(1.0); // close to native weight, not bolder
+    [ThreadStatic] static byte[]? _gammaTs;
+    static byte[] _gamma { get => _gammaTs ?? GammaLight; set => _gammaTs = value; }
+
+    static byte[] Curve(double g)
+    {
+        var t = new byte[256];
+        for (int i = 0; i < 256; i++) t[i] = (byte)Math.Round(255 * Math.Pow(i / 255.0, g));
+        return t;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct RECT { public int L, T, R, B; }
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern int SetBkMode(IntPtr dc, int mode);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern uint SetTextColor(IntPtr dc, int color);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] static extern IntPtr CreateFontIndirectW(ref LOGFONTW lf);
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] static extern int DrawTextW(IntPtr dc, string text, int len, ref RECT r, uint format);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    struct LOGFONTW
+    {
+        public int lfHeight, lfWidth, lfEscapement, lfOrientation, lfWeight;
+        public byte lfItalic, lfUnderline, lfStrikeOut, lfCharSet, lfOutPrecision, lfClipPrecision, lfQuality, lfPitchAndFamily;
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 32)] public string lfFaceName;
+    }
+
+    static readonly Dictionary<(string, float, FontStyle), IntPtr> GrayFonts = new();
+
+    static IntPtr GrayFont(Font f)
+    {
+        var k = (f.Name, f.Size, f.Style);
+        if (GrayFonts.TryGetValue(k, out var h)) return h;
+        // Built by hand (Font.ToLogFont can't fill a struct with a string field). Glance fonts are in pixels.
+        float px = f.Unit == GraphicsUnit.Pixel ? f.Size : f.SizeInPoints * 96f / 72f;
+        var lf = new LOGFONTW
+        {
+            lfHeight = -(int)MathF.Round(px),
+            lfWeight = f.Bold ? 700 : f.Name.Contains("Semibold", StringComparison.OrdinalIgnoreCase) ? 600 : 400,
+            lfItalic = (byte)(f.Italic ? 1 : 0),
+            lfUnderline = (byte)(f.Underline ? 1 : 0),
+            lfStrikeOut = (byte)(f.Strikeout ? 1 : 0),
+            lfCharSet = 1, // DEFAULT_CHARSET (Cyrillic, symbols)
+            lfQuality = 4, // ANTIALIASED_QUALITY: hinted grayscale
+            lfFaceName = f.Name.Length > 31 ? f.Name[..31] : f.Name,
+        };
+        h = CreateFontIndirectW(ref lf);
+        GrayFonts[k] = h;
+        return h;
+    }
+
+    static void GrayText(IntPtr hdc, string s, Font f, Size size, TextFormatFlags flags)
+    {
+        var font = GrayFont(f);
+        var old = SelectObject(hdc, font);
+        SetBkMode(hdc, 1 /*TRANSPARENT*/);
+        SetTextColor(hdc, 0xFFFFFF);
+        var r = new RECT { R = size.Width, B = size.Height };
+        DrawTextW(hdc, s, s.Length, ref r, (uint)flags & 0x0002FFFF);
+        SelectObject(hdc, old);
+    }
+
+    const int MaxEntries = 256;
+    static readonly Dictionary<string, LinkedListNode<(string Key, Bitmap Bmp)>> Map = new();
+    static readonly LinkedList<(string Key, Bitmap Bmp)> Lru = new();
+    static readonly object Gate = new();
+
+    public static void Draw(Graphics g, string s, Font f, Color c, Rectangle rc, TextFormatFlags flags)
+    {
+        string key = string.Concat(s, "\u0001", f.Name, "|", f.Size.ToString(System.Globalization.CultureInfo.InvariantCulture), "|", ((int)f.Style).ToString(),
+            "\u0001", c.ToArgb().ToString(), "\u0001", rc.Width.ToString(), "x", rc.Height.ToString(), "\u0001", ((int)flags).ToString());
+        Bitmap bmp;
+        lock (Gate)
+        {
+            if (Map.TryGetValue(key, out var node)) { Lru.Remove(node); Lru.AddFirst(node); bmp = node.Value.Bmp; }
+            else
+            {
+                bmp = Render(s, f, c, rc.Size, flags);
+                Map[key] = Lru.AddFirst((key, bmp));
+                while (Lru.Count > MaxEntries)
+                {
+                    var last = Lru.Last!;
+                    Lru.RemoveLast();
+                    Map.Remove(last.Value.Key);
+                    last.Value.Bmp.Dispose();
+                }
+            }
+            var st = g.Save();
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.CompositingMode = CompositingMode.SourceOver;
+            g.DrawImage(bmp, rc, 0, 0, rc.Width, rc.Height, GraphicsUnit.Pixel);
+            g.Restore(st);
+        }
+    }
+
+    static Bitmap Render(string s, Font f, Color c, Size size, TextFormatFlags flags)
+    {
+        // GDI grayscale antialiasing (ANTIALIASED_QUALITY) with full hinting: glyph stems snap to whole pixels,
+        // so text on glass is as sharp as standard Windows grayscale text (ClearType colour can't be composited
+        // over an unknown blurred background, and averaging it softened the edges).
+        bool darkText = 0.299 * c.R + 0.587 * c.G + 0.114 * c.B < 128;
+        using var mask = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppRgb);
+        using (var mg = Graphics.FromImage(mask))
+        {
+            mg.Clear(Color.Black);
+            IntPtr hdc = mg.GetHdc();
+            try { GrayText(hdc, s, f, size, flags); }
+            finally { mg.ReleaseHdc(hdc); }
+        }
+        _gamma = darkText ? GammaDark : GammaLight;
+        var dst = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
+        var rect = new Rectangle(Point.Empty, size);
+        var sd = mask.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+        var dd = dst.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+        try
+        {
+            int n = size.Width * 4;
+            var src = new byte[n];
+            var row = new byte[n];
+            int ca = c.A;
+            for (int y = 0; y < size.Height; y++)
+            {
+                System.Runtime.InteropServices.Marshal.Copy(sd.Scan0 + y * sd.Stride, src, 0, n);
+                for (int x = 0; x < n; x += 4)
+                {
+                    int a = _gamma[Math.Max(src[x + 2], Math.Max(src[x + 1], src[x]))];
+                    if (a < 3) { row[x] = row[x + 1] = row[x + 2] = row[x + 3] = 0; continue; }
+                    a = a * ca / 255;
+                    row[x] = (byte)(c.B * a / 255);
+                    row[x + 1] = (byte)(c.G * a / 255);
+                    row[x + 2] = (byte)(c.R * a / 255);
+                    row[x + 3] = (byte)a;
+                }
+                System.Runtime.InteropServices.Marshal.Copy(row, 0, dd.Scan0 + y * dd.Stride, n);
+            }
+        }
+        finally { mask.UnlockBits(sd); dst.UnlockBits(dd); }
+        return dst;
+    }
+}
