@@ -40,9 +40,9 @@ internal static class GlassHost
                 g.SetClip(dirty);
                 g.Clear(Color.Transparent);
                 bool prev = Painter.SoftText;
-                // Always render text with alpha (GDI ClearType writes alpha 0, which shows as dark, jagged edges
-                // wherever the surface is composited — glass, and the composited settings page in Classic too).
-                Painter.SoftText = true;
+                // Glass: text with real alpha (grayscale). Classic: native ClearType — the surface is opaque, and the
+                // alpha GDI leaves at 0 is fixed up below so composited windows don't show dark, jagged edges.
+                Painter.SoftText = glass;
                 try
                 {
                     Painter.Prepare(g);
@@ -53,6 +53,7 @@ internal static class GlassHost
                 catch (Exception e) { Log.Error("Paint " + c.GetType().Name, e); }
                 finally { Painter.SoftText = prev; }
             }
+            if (!glass) buf.MakeOpaque(dirty);
             buf.Present(hdc, dirty);
         }
         finally { EndPaint(c.Handle, ref ps); }
@@ -131,6 +132,23 @@ internal sealed class AlphaBuffer : IDisposable
     {
         if (_bmp is null || size != _size) Recreate(size);
         return Graphics.FromImage(_bmp!);
+    }
+
+    /// <summary>Sets alpha to 255 in <paramref name="r"/> (Classic surfaces are opaque; GDI text leaves alpha 0).</summary>
+    public void MakeOpaque(Rectangle r)
+    {
+        if (_bits == IntPtr.Zero) return;
+        r.Intersect(new Rectangle(Point.Empty, _size));
+        if (r.IsEmpty) return;
+        int stride = _size.Width * 4;
+        var row = new byte[r.Width * 4];
+        for (int y = r.Top; y < r.Bottom; y++)
+        {
+            IntPtr p = _bits + y * stride + r.Left * 4;
+            Marshal.Copy(p, row, 0, row.Length);
+            for (int i = 3; i < row.Length; i += 4) row[i] = 255;
+            Marshal.Copy(row, 0, p, row.Length);
+        }
     }
 
     public void Present(IntPtr hdc, Rectangle r)

@@ -521,7 +521,7 @@ internal static class AlphaText
     public static bool Failed;
     // Coverage → alpha curves: light text on dark glass gets a touch more weight (thin strokes stay solid),
     // dark text on light glass a touch less (avoids a bold, smeared look).
-    static readonly byte[] GammaLight = Curve(0.80), GammaDark = Curve(1.10);
+    static readonly byte[] GammaLight = Curve(0.95), GammaDark = Curve(1.0); // close to native weight, not bolder
     [ThreadStatic] static byte[]? _gammaTs;
     static byte[] _gamma { get => _gammaTs ?? GammaLight; set => _gammaTs = value; }
 
