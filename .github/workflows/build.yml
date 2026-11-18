@@ -105,7 +105,11 @@ jobs:
           merge-multiple: true
       - name: Delta-update block maps
         working-directory: artifacts
-        run: python3 ../repo/build/makeblocks.py Glance-*
+        run: |
+          python3 ../repo/build/makeblocks.py Glance-*
+          # compressed copies for full downloads (the program itself is stored uncompressed for small deltas)
+          for f in Glance-*; do case "$f" in *.blocks) ;; *) gzip -9 -k -n "$f" ;; esac; done
+          ls -la
       - name: Checksums
         working-directory: artifacts
         run: |

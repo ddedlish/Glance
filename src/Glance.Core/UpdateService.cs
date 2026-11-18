@@ -14,7 +14,7 @@ namespace Glance;
 /// </summary>
 internal sealed class UpdateService
 {
-    public sealed record Release(Version Version, string Tag, string Notes, string AssetUrl, string AssetName, string SumsUrl, long Size, string? BlocksUrl = null)
+    public sealed record Release(Version Version, string Tag, string Notes, string AssetUrl, string AssetName, string SumsUrl, long Size, string? BlocksUrl = null, string? GzUrl = null)
     {
         public string VersionText => Fmt.Ver(Version);
     }
@@ -75,7 +75,7 @@ internal sealed class UpdateService
         if (!Version.TryParse(tag.TrimStart('v', 'V'), out var v)) return null;
         if (Normalize(v) <= Normalize(AppInfo.Version)) return null;
 
-        string? asset = null, sums = null, blocks = null;
+        string? asset = null, sums = null, blocks = null, gz = null;
         long size = 0;
         if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
         foreach (var a in assets.EnumerateArray())
@@ -90,10 +90,11 @@ internal sealed class UpdateService
             }
             else if (string.Equals(name, "SHA256SUMS", StringComparison.OrdinalIgnoreCase)) sums = url;
             else if (string.Equals(name, AssetName + ".blocks", StringComparison.OrdinalIgnoreCase)) blocks = url;
+            else if (string.Equals(name, AssetName + ".gz", StringComparison.OrdinalIgnoreCase)) gz = url;
         }
         if (asset is null || sums is null || size > MaxAssetBytes) return null;
         string notes = root.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() ?? "" : "";
-        return new Release(v, tag, notes, asset, AssetName, sums, size, blocks);
+        return new Release(v, tag, notes, asset, AssetName, sums, size, blocks, gz);
     }
 
     static readonly Dictionary<string, (string ETag, byte[]? Body)> ETags = new();
@@ -116,7 +117,7 @@ internal sealed class UpdateService
             string tag = Uri.UnescapeDataString(loc[(i + 5)..]);
             if (!Version.TryParse(tag.TrimStart('v', 'V'), out var v) || Normalize(v) <= Normalize(AppInfo.Version)) return null;
             string bas = $"https://github.com/{repo}/releases/download/{Uri.EscapeDataString(tag)}/";
-            return new Release(v, tag, "", bas + AssetName, AssetName, bas + "SHA256SUMS", 0, bas + AssetName + ".blocks");
+            return new Release(v, tag, "", bas + AssetName, AssetName, bas + "SHA256SUMS", 0, bas + AssetName + ".blocks", bas + AssetName + ".gz");
         }
         catch (Exception e) when (e is not OperationCanceledException) { Log.Info("Release page check: " + e.Message); return null; }
     }
@@ -141,6 +142,14 @@ internal sealed class UpdateService
         {
             try { delta = await DeltaDownloadAsync(r, exe, tmp, expected, ct).ConfigureAwait(false); }
             catch (Exception e) when (e is not OperationCanceledException) { Log.Info($"Delta update failed, full download: {e.Message}"); }
+        }
+
+        // Full download, compressed: the .gz is ~2.5× smaller than the program; unpacked on the fly and then
+        // verified against SHA256SUMS like any other download.
+        if (!delta && r.GzUrl is not null)
+        {
+            try { delta = await GzDownloadAsync(r.GzUrl, tmp, ct).ConfigureAwait(false); }
+            catch (Exception e) when (e is not OperationCanceledException) { Log.Info($"Compressed download failed, plain download: {e.Message}"); TryDelete(tmp); }
         }
 
         try
@@ -189,6 +198,29 @@ internal sealed class UpdateService
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = dir };
         psi.ArgumentList.Add("--after-update");
         Process.Start(psi);
+    }
+
+    static async Task<bool> GzDownloadAsync(string url, string tmp, CancellationToken ct)
+    {
+        using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode) return false;
+        long packed = resp.Content.Headers.ContentLength ?? 0;
+        if (packed > MaxAssetBytes) return false;
+        await using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        await using var gz = new System.IO.Compression.GZipStream(src, System.IO.Compression.CompressionMode.Decompress);
+        await using var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20, true);
+        var buf = new byte[1 << 20];
+        long total = 0;
+        int read;
+        while ((read = await gz.ReadAsync(buf, ct).ConfigureAwait(false)) > 0)
+        {
+            total += read;
+            if (total > MaxAssetBytes) throw new InvalidDataException("Слишком большой файл обновления");
+            await dst.WriteAsync(buf.AsMemory(0, read), ct).ConfigureAwait(false);
+        }
+        LastDownloadedBytes = packed;
+        Log.Info($"Compressed update: downloaded {Fmt.Size(packed)} for {Fmt.Size(total)}");
+        return true;
     }
 
     /// <summary>Bytes actually downloaded by the last update (for the "обновлено" message / log).</summary>
@@ -275,7 +307,7 @@ internal sealed class UpdateService
             else ranges.Add((s0, e0));
         }
         long missing = ranges.Sum(x => x.End - x.Start + 1);
-        if (missing > newLen * 0.9) return false; // nothing to gain — plain download is simpler
+        if (missing > newLen * (r.GzUrl is not null ? 0.4 : 0.9)) return false; // big change → the compressed full download is smaller
 
         // Resolve the redirect once (signed CDN URL), then range-request it directly.
         string url = r.AssetUrl;
