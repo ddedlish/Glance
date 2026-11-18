@@ -99,6 +99,66 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         if (e.KeyCode == Keys.Escape) Close();
     }
 
+    string? _page;
+
+    // Esc / Backspace on a page goes back to the tiles; Esc on the tiles closes the window.
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData is Keys.Escape or Keys.Back && ActiveControl is not TextBox)
+        {
+            if (_page is not null) { OpenPage(null); return true; }
+            if (keyData == Keys.Escape) { Close(); return true; }
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    /// <summary>Opens a settings page (null = the tiles home) with a quick slide-in.</summary>
+    void OpenPage(string? page)
+    {
+        _page = page;
+        Build();
+        _scroll.ScrollTo(0);
+    }
+
+    static readonly (string Title, string Sub, char Glyph, Color Color)[] Pages =
+    {
+        ("Оформление", "Liquid Glass или классика, цветовые темы, виджет", '\uE771', Color.FromArgb(124, 92, 255)),
+        ("Значки в трее", "Вид значка, общий или для каждого устройства", '\uE7F4', Color.FromArgb(0, 132, 255)),
+        ("Уведомления", "Подключение, низкий заряд, звуки, тихие часы", '\uEA8F', Color.FromArgb(255, 122, 69)),
+        ("Мышь и клавиатура", "Чувствительность, прокрутка, повтор клавиш", '\uE962', Color.FromArgb(46, 196, 160)),
+        ("Наушники", "Заряд каждого наушника и кейса", '\uE7F6', Color.FromArgb(236, 72, 153)),
+        ("Система", "Автозапуск, горячая клавиша, частота опроса", '\uE713', Color.FromArgb(100, 116, 139)),
+        ("Обновления", "Версия, проверка и автоустановка", '\uE895', Color.FromArgb(14, 165, 233)),
+        ("Glance Pro", "Виджет, темы, правила устройств, история", '\uE734', Color.FromArgb(245, 158, 11)),
+        ("О программе", "Что нового, данные, автор", '\uE946', Color.FromArgb(139, 92, 246)),
+    };
+
+    void BuildHome(ref int y, int x, int w, float sc, Theme t)
+    {
+        // hero header
+        var title = new GlassLabel("Настройки", Fonts.Strong(22 * sc), t.Text) { Location = new Point(x + Px(4), y), Size = new Size(w, Px(34)) };
+        var sub = new GlassLabel($"Glance {AppInfo.VersionText}" + (Pro.IsActive ? $" · Pro · {Pro.Info!.Owner}" : ""), Fonts.Regular(12.5f * sc), t.SubText)
+            { Location = new Point(x + Px(4), y + Px(34)), Size = new Size(w, Px(20)) };
+        _panel.Controls.Add(title);
+        _panel.Controls.Add(sub);
+        y += Px(68);
+        int gap = Px(10), tw = (w - gap) / 2, th = Px(128);
+        for (int i = 0; i < Pages.Length; i++)
+        {
+            var (name, desc, glyph, color) = Pages[i];
+            var tile = new TileButton(sc, name, desc, glyph, color)
+            {
+                Location = new Point(x + (i % 2) * (tw + gap), y + (i / 2) * (th + gap)),
+                Size = new Size(tw, th),
+            };
+            string page = name;
+            tile.Click += (_, _) => Ui.Post(() => OpenPage(page));
+            tile.GotFocus += (_, _) => _scroll.EnsureVisible(tile);
+            _panel.Controls.Add(tile);
+        }
+        y += (Pages.Length + 1) / 2 * (th + gap) + Px(14);
+    }
+
     void Build()
     {
         _panel.SuspendLayout();
@@ -109,19 +169,31 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         int y = Px(20), x = Px(20);
         int w = ClientSize.Width - Px(44);
 
-        void Section(string title)
+        // Home = tiles; a page shows only the rows of its section (the builder below runs in full each time,
+        // rows of other sections are simply not added).
+        string cur = "";
+        if (_page is null) BuildHome(ref y, x, w, sc, t);
+        else
         {
-            var l = new GlassLabel(title, Fonts.Strong(14 * sc), t.Text)
-            {
-                Location = new Point(x + Px(4), y + Px(8)),
-                Size = new Size(w, Px(26)),
-            };
-            _panel.Controls.Add(l);
-            y += Px(40);
+            var back = new FlatButton(sc, "‹  Все настройки");
+            back.Location = new Point(x, y);
+            back.Click += (_, _) => Ui.Post(() => OpenPage(null));
+            _panel.Controls.Add(back);
+            var title = new GlassLabel(_page, Fonts.Strong(20 * sc), t.Text) { Location = new Point(x + Px(4), y + Px(44)), Size = new Size(w, Px(32)) };
+            _panel.Controls.Add(title);
+            y += Px(88);
         }
+
+        void Section(string title) => cur = title;
 
         SettingRow Row(string title, string desc, Control? right)
         {
+            if (_page != cur) // not on this page: build nothing visible
+            {
+                var ghost = new SettingRow(sc, title, desc, right);
+                ghost.Dispose();
+                return ghost;
+            }
             var row = new SettingRow(sc, title, desc, right) { Location = new Point(x, y), Width = w };
             _panel.Controls.Add(row);
             if (right is not null) right.GotFocus += (_, _) => _scroll.EnsureVisible(row);
@@ -209,17 +281,9 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         Row("Звуки Glance", "Свои наборы: стеклянные колокольчики в Liquid Glass, чёткие сигналы в классике. Ночью и в играх молчат", Toggle(_s.Sounds, v => _s.Sounds = v));
         var vol = new Stepper(sc, _s.SoundVolume, 10, 100, 10, v => $"{v}%");
         vol.ValueChanged += () => { _s.SoundVolume = vol.Value; _s.NotifyChanged(); Sounds.Play(SoundKind.Connected, _s, preview: true); };
-        Row("Громкость звуков", "", vol);
+        Row("Громкость звуков", "При изменении сразу звучит пример", vol);
         Row("Набор звуков", "Стекло/Классика по стилю, или «Неон» и «Маримба»", ProOnly(Seg(new[] { "По стилю", "Неон", "Маримба" },
             Math.Clamp(_s.SoundPack, 0, 2), i => { _s.SoundPack = i; Sounds.Play(SoundKind.Connected, _s, preview: true); }), "Наборы звуков"));
-        var listen = new FlatButton(sc, "Прослушать");
-        listen.Click += (_, _) =>
-        {
-            Sounds.Play(SoundKind.Connected, _s, preview: true);
-            Ui.Delay(1100, () => Sounds.Play(SoundKind.Disconnected, _s, preview: true));
-            Ui.Delay(2200, () => Sounds.Play(SoundKind.Charged, _s, preview: true));
-        };
-        Row("Прослушать звуки", "Подключение, отключение, полный заряд", listen);
         Row("Звук при критическом заряде", "Тревожный сигнал вместе с баннером — даже ночью", Toggle(_s.CriticalSound, v => _s.CriticalSound = v));
         Row("Полностью заряжено", "Сообщить, когда устройство на зарядке дошло до 100%", Toggle(_s.FullChargeAlert, v => _s.FullChargeAlert = v));
         var qFrom = new Stepper(sc, _s.QuietFrom, 0, 23, 1, v => $"с {v:00}:00");
@@ -295,31 +359,18 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
             Row($"Версия {AppInfo.VersionText}", "Автообновление работает в сборках из GitHub Releases", null);
         }
 
-        // ── Footer ──
-        y += Px(10);
+        // ── О программе ──
+        Section("О программе");
         var news = new FlatButton(sc, "Открыть");
         news.Click += (_, _) => WhatsNewForm.ShowWindow();
         Row("Что нового", "Описание всех версий и изменений", news);
-        y += Px(10);
-
-        var folder = new GlassLabel("Открыть папку с данными и журналом", Fonts.Regular(12.5f * sc), t.AccentText, link: true)
-        {
-            Location = new Point(x + Px(4), y),
-            Size = new Size(w, Px(22)),
-        };
-        folder.Click += (_, _) =>
-        {
-            try { Process.Start(new ProcessStartInfo(AppInfo.DataDir) { UseShellExecute = true }); } catch { }
-        };
-        _panel.Controls.Add(folder);
-        y += Px(28);
-        var privacy = new GlassLabel("Glance не собирает данные. Всё хранится только на этом компьютере.", Fonts.Regular(12 * sc), t.SubText)
-        {
-            Location = new Point(x + Px(4), y),
-            Size = new Size(w, Px(20)),
-        };
-        _panel.Controls.Add(privacy);
-        y += Px(40);
+        var folder = new FlatButton(sc, "Открыть");
+        folder.Click += (_, _) => { try { Process.Start(new ProcessStartInfo(AppInfo.DataDir) { UseShellExecute = true }); } catch { } };
+        Row("Данные и журнал", "Настройки, история заряда и журнал хранятся только на этом компьютере", folder);
+        var author = new FlatButton(sc, "Steam");
+        author.Click += (_, _) => AppInfo.OpenUrl(AppInfo.AuthorUrl);
+        Row("Автор — ddedlish", "Glance © 2026 ddedlish. Без рекламы, без сбора данных", author);
+        y += Px(24);
         _panel.ResumeLayout();
         _scroll.SetContentHeight(y);
     }

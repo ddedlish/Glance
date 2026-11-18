@@ -347,3 +347,59 @@ internal sealed class SettingRow : GlassPanel, IGlassLayer
         else Painter.Text(g, _title, Fonts.Regular(14 * s), t.Text, new RectangleF(16 * s, 0, textW, Height));
     }
 }
+
+/// <summary>Settings home: a category tile with a coloured icon, title, short description and a chevron.</summary>
+internal sealed class TileButton : ThemedControl
+{
+    readonly string _title, _sub;
+    readonly char _glyph;
+    readonly Color _color;
+    float _lift;
+
+    public TileButton(float scale, string title, string sub, char glyph, Color color) : base(scale)
+    {
+        _title = title; _sub = sub; _glyph = glyph; _color = color;
+        Cursor = Cursors.Hand;
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); Animate(1); }
+    protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); Animate(0); }
+
+    void Animate(float to)
+    {
+        float from = _lift;
+        Animator.Run(160, p => { if (IsDisposed) return; _lift = from + (to - from) * p; Invalidate(); });
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (e.KeyCode is Keys.Enter or Keys.Space) OnClick(EventArgs.Empty);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        Painter.Prepare(g);
+        float s = Sc;
+        var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
+        float rad = 16 * s;
+        Painter.FillRound(g, r, rad, T.Surface);
+        if (_lift > 0.01f) Painter.FillRound(g, r, rad, Theme.Alpha(T.SurfaceHover, (int)(255 * _lift)));
+        Painter.GlassSheen(g, r, rad, T.Dark);
+        Painter.StrokeRound(g, r, rad, _lift > 0.5f ? Theme.Alpha(_color, 140) : T.Border, Math.Max(1, s));
+
+        // icon in a soft gradient circle
+        float d = 40 * s;
+        var c = new RectangleF(16 * s, 16 * s, d, d);
+        using (var br = new System.Drawing.Drawing2D.LinearGradientBrush(c, Theme.Mix(_color, Color.White, 0.25f), _color, 45f))
+            g.FillEllipse(br, c);
+        Painter.Glyph(g, _glyph, 17 * s, Color.White, c);
+
+        float tx = 16 * s, ty = c.Bottom + 10 * s, tw = Width - 32 * s;
+        Painter.Text(g, _title, Fonts.Strong(14 * s), T.Text, new RectangleF(tx, ty, tw - 14 * s, 22 * s));
+        Painter.Text(g, _sub, Fonts.Regular(12 * s), T.SubText, new RectangleF(tx, ty + 22 * s, tw, Height - ty - 26 * s), StringAlignment.Near, StringAlignment.Near, wrap: true);
+        Painter.Text(g, "›", Fonts.Strong(18 * s), T.SubText, new RectangleF(Width - 30 * s + 3 * s * _lift, 18 * s, 20 * s, 30 * s), StringAlignment.Center);
+        FocusRing(g);
+    }
+}
