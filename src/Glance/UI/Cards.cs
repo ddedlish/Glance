@@ -59,8 +59,63 @@ internal static class Svc
 /// <summary>The device card used in the panel and hover popup.</summary>
 internal static class DeviceCard
 {
+    /// <summary>Compact one-line row: disconnected devices and connected ones without battery data.</summary>
+    public static bool IsCompact(Accessory a) => !a.Connected || (a.Level is null && !a.HasParts);
+    public const float CompactH = 46;
+
+    /// <summary>Colour per device type — mouse teal, keyboard violet, audio pink, gamepad green…</summary>
+    public static Color KindColor(DeviceKind k) => k switch
+    {
+        DeviceKind.Mouse => Color.FromArgb(20, 184, 166),
+        DeviceKind.Keyboard => Color.FromArgb(139, 92, 246),
+        DeviceKind.Earbuds or DeviceKind.Headphones or DeviceKind.Neckband or DeviceKind.Headset => Color.FromArgb(236, 72, 153),
+        DeviceKind.Gamepad => Color.FromArgb(34, 197, 94),
+        DeviceKind.Speaker => Color.FromArgb(249, 115, 22),
+        DeviceKind.Pen => Color.FromArgb(245, 158, 11),
+        DeviceKind.Phone => Color.FromArgb(59, 130, 246),
+        _ => Color.FromArgb(100, 116, 139),
+    };
+
+    /// <summary>App-style badge: rounded square with a gradient of the type colour and a white vector icon.</summary>
+    public static void Badge(Graphics g, RectangleF r, Accessory a, bool dim)
+    {
+        var c = KindColor(a.Kind);
+        if (dim) c = Theme.Mix(c, Theme.Current.Dark ? Color.FromArgb(60, 62, 70) : Color.FromArgb(200, 202, 208), 0.55f);
+        using (var p = Painter.Round(r, r.Width * 0.3f))
+        using (var br = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2), Theme.Mix(c, Color.White, 0.2f), Theme.Mix(c, Color.Black, 0.12f), 90f))
+            g.FillPath(br, p);
+        Painter.GlyphPath(g, Glyphs.For(a.Kind), r, Color.FromArgb(dim ? 220 : 255, 255, 255, 255), 0.52f, 0.5f);
+    }
+
+    /// <summary>One-line row: badge, name, and a link chip (connected) or «когда и сколько было» (recent).</summary>
+    public static void DrawCompact(Graphics g, RectangleF r, Accessory a, float s, bool hot)
+    {
+        var t = Theme.Current;
+        float cr = 12 * s;
+        Painter.FillRound(g, r, cr, hot ? t.SurfaceHover : t.Surface);
+        Painter.GlassSheen(g, r, cr, t.Dark);
+        Painter.StrokeRound(g, r, cr, t.Border, Math.Max(1, s));
+        var full = r;
+        r = new RectangleF(r.X, r.Y, r.Width, Math.Min(r.Height, CompactH * s)); // content stays put when a hover strip opens below
+        var b = new RectangleF(r.X + 10 * s, r.Y + (r.Height - 28 * s) / 2, 28 * s, 28 * s);
+        Badge(g, b, a, !a.Connected);
+        float x0 = b.Right + 10 * s, right = r.Right - 12 * s;
+        string chip = a.Connected ? a.Link : (a.LastLevel is int ll ? $"{Fmt.Ago(a.LastSeen)} · было {ll}%" : Fmt.Ago(a.LastSeen));
+        var cf = Fonts.Regular(11 * s);
+        float cw = Painter.Width(g, chip, cf) + (a.Connected ? 18 * s : 2 * s);
+        if (a.Connected)
+        {
+            var chipR = new RectangleF(right - cw, r.Y + (r.Height - 20 * s) / 2, cw, 20 * s);
+            Painter.FillRound(g, chipR, 10 * s, Theme.Alpha(KindColor(a.Kind), t.Dark ? 60 : 40));
+            Painter.Text(g, chip, cf, t.Text, chipR, StringAlignment.Center);
+        }
+        else Painter.Text(g, chip, cf, t.SubText, new RectangleF(right - cw, r.Y, cw, r.Height), StringAlignment.Far);
+        Painter.Text(g, a.DisplayName, Fonts.Regular(13.5f * s), a.Connected ? t.Text : t.SubText, new RectangleF(x0, r.Y, right - cw - 8 * s - x0, r.Height));
+    }
+
     public static float Height(Accessory a, bool detailed)
     {
+        if (detailed && IsCompact(a)) return CompactH;
         float h = 66;
         if (a.Connected && a.HasParts) h += 34;
         if (detailed && HasHistory(a)) h += 30;
@@ -105,6 +160,7 @@ internal static class DeviceCard
 
     public static void Draw(Graphics g, RectangleF r, Accessory a, float s, bool hot, bool detailed, float grow = 1)
     {
+        if (detailed && IsCompact(a)) { DrawCompact(g, r, a, s, hot); return; }
         var t = Theme.Current;
         float cr = (t.Glass ? 12 : 8) * s;
         Painter.FillRound(g, r, cr, hot ? t.SurfaceHover : t.Surface);
@@ -116,16 +172,15 @@ internal static class DeviceCard
         var brand = a.Profile.BrandColor ?? t.Accent;
 
         // icon bubble
-        var ic = new RectangleF(r.X + 12 * s, r.Y + 13 * s, 40 * s, 40 * s);
-        Painter.FillRound(g, ic, 20 * s, Theme.Alpha(brand, dim ? 25 : 45));
-        Painter.Glyph(g, Glyphs.For(a.Kind), 18 * s, dim ? t.SubText : (a.Profile.BrandColor ?? t.AccentText), ic);
+        var ic = new RectangleF(r.X + 12 * s, r.Y + 14 * s, 38 * s, 38 * s);
+        Badge(g, ic, a, dim);
 
         float x0 = r.X + 64 * s, right = r.Right - 12 * s;
 
         // percent + mini bar
         // Disconnected devices show no stale percentage; connected ones without data show «—» and no bar.
         int? lvl = a.Connected ? a.Level : null;
-        var pctFont = Fonts.Big(18 * s);
+        var pctFont = Fonts.Big(20 * s);
         float pw = a.Connected ? Math.Max(58 * s, Painter.Width(g, "100%", pctFont) + 14 * s) : 30 * s;
         if (a.Connected)
         {
@@ -145,7 +200,7 @@ internal static class DeviceCard
 
         // name + status
         float textW = right - pw - 20 * s - x0;
-        Painter.Text(g, a.DisplayName, Fonts.Strong(14 * s), text, new RectangleF(x0, r.Y + 12 * s, textW, 20 * s));
+        Painter.Text(g, a.DisplayName, Fonts.Strong(13.5f * s), text, new RectangleF(x0, r.Y + 12 * s, textW, 20 * s));
         var sub = Svc.Status(a);
         var feat = Svc.Subtitle(a);
         if (feat.Length > 0 && a.Connected && !a.BudsPending && a.Level is not null) sub = $"{sub} · {feat}";

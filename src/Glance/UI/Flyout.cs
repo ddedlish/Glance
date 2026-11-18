@@ -63,20 +63,30 @@ internal sealed class FlyoutForm : CardForm
     List<(Accessory? A, string? Section)> Entries()
     {
         var list = new List<(Accessory?, string?)>();
-        var connected = Svc.R.ConnectedDevices
+        var connected = Svc.R.ConnectedDevices.Where(a => !IsServiceEntry(a))
             .OrderByDescending(a => a.Level.HasValue || a.HasParts)
             .ThenBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase).ToList();
         foreach (var a in connected) list.Add((a, null));
         var recent = Svc.R.All
-            .Where(a => !a.Connected && a.LastLevel.HasValue && (DateTime.Now - a.LastSeen).TotalDays < 30)
+            .Where(a => !a.Connected && !IsServiceEntry(a) && a.LastLevel.HasValue && (DateTime.Now - a.LastSeen).TotalDays < 30)
             .OrderByDescending(a => a.LastSeen).Take(6).ToList();
         if (recent.Count > 0)
         {
-            list.Add((null, "Недавно"));
-            foreach (var a in recent) list.Add((a, null));
+            // collapsed by default: one line «Недавно · 4 ›», opens on click
+            list.Add((null, RecentTag));
+            if (_recentOpen) foreach (var a in recent) list.Add((a, null));
         }
+        _recentCount = recent.Count;
         return list;
     }
+
+    const string RecentTag = "\u0001recent";
+    bool _recentOpen;
+    int _recentCount;
+
+    /// <summary>Apple «Find My» beacons and similar service entries are not accessories.</summary>
+    static bool IsServiceEntry(Accessory a) =>
+        a.Name.Contains("Find My", StringComparison.OrdinalIgnoreCase) || a.Name.Contains("Локатор", StringComparison.OrdinalIgnoreCase);
 
     protected override void Relayout()
     {
@@ -91,7 +101,7 @@ internal sealed class FlyoutForm : CardForm
         }
         foreach (var (a, section) in entries)
         {
-            float h = section is not null ? 26 : DeviceCard.Height(a!, true);
+            float h = section == RecentTag ? 34 : section is not null ? 26 : DeviceCard.Height(a!, true);
             if (a is not null && a.Key == _expKey) h += Expand * _expand; // hovered card opens a strip below
             _items.Add((a, section, new RectangleF(Side, y, W - 2 * Side, h)));
             y += h + Gap;
@@ -147,6 +157,19 @@ internal sealed class FlyoutForm : CardForm
             if (arr < 1) r.Offset(0, (1 - arr) * 16 * s);
             if (r.Bottom < view.Top || r.Top > view.Bottom) continue;
             if (section == HeroTag) DrawHero(g, r, s, Arrive(i + 3));
+            else if (section == RecentTag)
+            {
+                bool hot = _hotRecent;
+                if (hot) Painter.FillRound(g, r, 10 * s, t.SurfaceHover);
+                Painter.Text(g, $"Недавно · {_recentCount}", Fonts.Strong(12.5f * s), t.SubText, new RectangleF(r.X + 6 * s, r.Y, r.Width - 40 * s, r.Height));
+                var ch = new RectangleF(r.Right - 30 * s, r.Y, 24 * s, r.Height);
+                var st2 = g.Save();
+                g.TranslateTransform(ch.X + ch.Width / 2, ch.Y + ch.Height / 2);
+                g.RotateTransform(_recentOpen ? 90 : 0);
+                g.TranslateTransform(-(ch.X + ch.Width / 2), -(ch.Y + ch.Height / 2));
+                Painter.Chevron(g, ch, t.SubText, 1.8f * s);
+                g.Restore(st2);
+            }
             else if (section is not null)
                 Painter.Text(g, section, Fonts.Strong(12 * s), t.SubText, new RectangleF(r.X + 4 * s, r.Y + 4 * s, r.Width, r.Height - 4 * s));
             else
@@ -406,6 +429,16 @@ internal sealed class FlyoutForm : CardForm
 
     RectangleF Scaled(RectangleF r) => new(r.X * Sc, (r.Y - _scroll) * Sc, r.Width * Sc, r.Height * Sc);
 
+    bool _hotRecent;
+
+    bool HitRecent(Point p)
+    {
+        if (p.Y < Header * Sc || p.Y > (Header + _viewH) * Sc) return false;
+        foreach (var it in _items)
+            if (it.Section == RecentTag && Scaled(it.R).Contains(p)) return true;
+        return false;
+    }
+
     int HitCard(Point p)
     {
         if (p.Y < Header * Sc || p.Y > (Header + _viewH) * Sc) return -1;
@@ -423,6 +456,8 @@ internal sealed class FlyoutForm : CardForm
         bool lightMoved = _hot >= 0 && T.Glass;
         _mouse = e.Location;
         if (lightMoved) Invalidate();
+        bool hr = HitRecent(e.Location);
+        if (hr != _hotRecent) { _hotRecent = hr; Cursor = hr ? Cursors.Hand : Cursors.Default; Invalidate(); }
         int hot = HitCard(e.Location);
         string btn = HitButton(e.Location);
         bool more = hot >= 0 && _expand > 0.5f && _items[hot].A?.Key == _expKey && MoreRect(Scaled(_items[hot].R)).Contains(e.Location);
@@ -469,6 +504,7 @@ internal sealed class FlyoutForm : CardForm
                 CloseAnimated();
                 return;
         }
+        if (HitRecent(e.Location)) { _recentOpen = !_recentOpen; _openT = 1; Rebuild(); return; }
         int i = HitCard(e.Location);
         if (i >= 0 && _items[i].A is Accessory a)
         {
