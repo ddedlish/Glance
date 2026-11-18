@@ -152,6 +152,15 @@ internal sealed class UpdateService
             catch (Exception e) when (e is not OperationCanceledException) { Log.Info($"Compressed download failed, plain download: {e.Message}"); TryDelete(tmp); }
         }
 
+        // A shortcut download (delta or .gz) that doesn't match the published hash falls back to the plain file.
+        if (delta)
+        {
+            string quick;
+            await using (var qs = File.OpenRead(tmp))
+                quick = Convert.ToHexString(await SHA256.HashDataAsync(qs, ct).ConfigureAwait(false)).ToLowerInvariant();
+            if (quick != expected) { Log.Info("Shortcut download did not match SHA256SUMS — downloading the full file"); TryDelete(tmp); delta = false; }
+        }
+
         try
         {
             if (!delta)
