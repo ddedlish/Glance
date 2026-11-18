@@ -62,7 +62,7 @@ internal sealed class UpdateService
             }
             r.EnsureSuccessStatusCode();
             body = await r.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-            if (r.Headers.ETag is { } tag) ETags[repo] = (tag.ToString(), body);
+            if (r.Headers.ETag is { } etag) ETags[repo] = (etag.ToString(), body);
             break;
         }
         if (body is null) return null;
