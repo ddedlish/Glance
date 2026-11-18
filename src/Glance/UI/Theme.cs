@@ -453,8 +453,10 @@ internal static class Painter
         }
         if (rc.Width > 0 && rc.Height > 0 && (long)rc.Width * rc.Height <= 1_500_000 && f.Size < 120)
         {
-            AlphaText.Draw(g, s, f, c, rc, flags);
-            return;
+            // Text must never take the app down: on any GDI trouble fall back to GDI+ text below.
+            try { AlphaText.Draw(g, s, f, c, rc, flags); return; }
+            catch (Exception e) when (!AlphaText.Failed) { AlphaText.Failed = true; Log.Error("AlphaText", e); }
+            catch (Exception) { }
         }
         using var sf = new StringFormat(wrap ? 0 : StringFormatFlags.NoWrap)
         {
@@ -515,6 +517,8 @@ internal static class Painter
 /// </summary>
 internal static class AlphaText
 {
+    /// <summary>Set after the first failure so the error is logged once.</summary>
+    public static bool Failed;
     // Coverage → alpha curves: light text on dark glass gets a touch more weight (thin strokes stay solid),
     // dark text on light glass a touch less (avoids a bold, smeared look).
     static readonly byte[] GammaLight = Curve(0.80), GammaDark = Curve(1.10);
@@ -551,11 +555,19 @@ internal static class AlphaText
     {
         var k = (f.Name, f.Size, f.Style);
         if (GrayFonts.TryGetValue(k, out var h)) return h;
-        var lf = new LOGFONTW();
-        object boxed = lf;
-        f.ToLogFont(boxed);
-        lf = (LOGFONTW)boxed;
-        lf.lfQuality = 4; // ANTIALIASED_QUALITY: hinted grayscale
+        // Built by hand (Font.ToLogFont can't fill a struct with a string field). Glance fonts are in pixels.
+        float px = f.Unit == GraphicsUnit.Pixel ? f.Size : f.SizeInPoints * 96f / 72f;
+        var lf = new LOGFONTW
+        {
+            lfHeight = -(int)MathF.Round(px),
+            lfWeight = f.Bold ? 700 : f.Name.Contains("Semibold", StringComparison.OrdinalIgnoreCase) ? 600 : 400,
+            lfItalic = (byte)(f.Italic ? 1 : 0),
+            lfUnderline = (byte)(f.Underline ? 1 : 0),
+            lfStrikeOut = (byte)(f.Strikeout ? 1 : 0),
+            lfCharSet = 1, // DEFAULT_CHARSET (Cyrillic, symbols)
+            lfQuality = 4, // ANTIALIASED_QUALITY: hinted grayscale
+            lfFaceName = f.Name.Length > 31 ? f.Name[..31] : f.Name,
+        };
         h = CreateFontIndirectW(ref lf);
         GrayFonts[k] = h;
         return h;

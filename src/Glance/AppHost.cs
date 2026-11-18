@@ -441,7 +441,9 @@ internal sealed class AppHost : ApplicationContext
         _hover = new HoverCard(list, icon.GetRect());
         var h = _hover;
         h.FormClosed += (_, _) => { if (_hover == h) _hover = null; };
-        h.ShowNear();
+        if (h.IsDisposed || list.Count == 0) { if (_hover == h) _hover = null; return; }
+        try { h.ShowNear(); }
+        catch (ObjectDisposedException) { if (_hover == h) _hover = null; return; }
         if (list.Any(x => x.Profile.Buds != BudsSource.None)) _scanner.Kick();
     }
 

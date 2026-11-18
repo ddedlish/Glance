@@ -40,7 +40,9 @@ internal static class GlassHost
                 g.SetClip(dirty);
                 g.Clear(Color.Transparent);
                 bool prev = Painter.SoftText;
-                Painter.SoftText = glass; // GDI ClearType would write alpha 0 → see-through text on glass
+                // Always render text with alpha (GDI ClearType writes alpha 0, which shows as dark, jagged edges
+                // wherever the surface is composited — glass, and the composited settings page in Classic too).
+                Painter.SoftText = true;
                 try
                 {
                     Painter.Prepare(g);
