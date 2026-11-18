@@ -49,9 +49,44 @@ internal sealed class Theme
     public Color Good => Dark ? Color.FromArgb(108, 203, 95) : Color.FromArgb(16, 124, 16);
     public Color Warn => Dark ? Color.FromArgb(252, 211, 77) : Color.FromArgb(157, 93, 0);
     public Color Bad => Dark ? Color.FromArgb(255, 120, 120) : Color.FromArgb(196, 43, 28);
-    public Color AccentText => Dark ? Mix(Accent, Color.White, 0.35f) : Mix(Accent, Color.Black, 0.12f);
-    public Color OnAccent => Luma(AccentFill) > 0.6 ? Color.Black : Color.White;
-    public Color AccentFill => Dark ? Mix(Accent, Color.White, 0.25f) : Accent;
+    /// <summary>Accent used for text: always readable (≥ 4.5:1) on this theme's surfaces, whatever the accent.</summary>
+    public Color AccentText => EnsureContrast(Dark ? Mix(Accent, Color.White, 0.30f) : Mix(Accent, Color.Black, 0.10f), ReferenceBg, 4.5);
+    /// <summary>Text on an accent fill: black or white, whichever contrasts more (WCAG).</summary>
+    public Color OnAccent => Contrast(AccentFill, Color.White) >= Contrast(AccentFill, Color.Black) ? Color.White : Color.Black;
+    /// <summary>Accent fill for buttons/segments: deep enough that its label reads well (≥ 4.5:1).</summary>
+    public Color AccentFill
+    {
+        get
+        {
+            var fill = Dark ? Mix(Accent, Color.White, 0.12f) : Accent;
+            // pull towards the darker side until white or black text on it reaches 4.5:1
+            for (int i = 0; i < 12 && Math.Max(Contrast(fill, Color.White), Contrast(fill, Color.Black)) < 4.5; i++)
+                fill = Mix(fill, Color.Black, 0.08f);
+            return fill;
+        }
+    }
+
+    /// <summary>Approximate background behind text (glass tint over a typical desktop, or the flat surface).</summary>
+    Color ReferenceBg => Dark ? Color.FromArgb(34, 36, 46) : Color.FromArgb(238, 240, 245);
+
+    static double RelLum(Color c)
+    {
+        static double Ch(int v) { double x = v / 255.0; return x <= 0.03928 ? x / 12.92 : Math.Pow((x + 0.055) / 1.055, 2.4); }
+        return 0.2126 * Ch(c.R) + 0.7152 * Ch(c.G) + 0.0722 * Ch(c.B);
+    }
+
+    public static double Contrast(Color a, Color b)
+    {
+        double la = RelLum(a), lb = RelLum(b);
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
+
+    static Color EnsureContrast(Color fg, Color bg, double ratio)
+    {
+        var towards = RelLum(bg) < 0.4 ? Color.White : Color.Black;
+        for (int i = 0; i < 14 && Contrast(fg, bg) < ratio; i++) fg = Mix(fg, towards, 0.1f);
+        return fg;
+    }
 
     public static Theme Current { get; private set; } = Load();
     public static event Action? Changed;
@@ -480,6 +515,63 @@ internal static class Painter
 /// </summary>
 internal static class AlphaText
 {
+    // Coverage → alpha curves: light text on dark glass gets a touch more weight (thin strokes stay solid),
+    // dark text on light glass a touch less (avoids a bold, smeared look).
+    static readonly byte[] GammaLight = Curve(0.80), GammaDark = Curve(1.10);
+    [ThreadStatic] static byte[]? _gammaTs;
+    static byte[] _gamma { get => _gammaTs ?? GammaLight; set => _gammaTs = value; }
+
+    static byte[] Curve(double g)
+    {
+        var t = new byte[256];
+        for (int i = 0; i < 256; i++) t[i] = (byte)Math.Round(255 * Math.Pow(i / 255.0, g));
+        return t;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct RECT { public int L, T, R, B; }
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern int SetBkMode(IntPtr dc, int mode);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern uint SetTextColor(IntPtr dc, int color);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] static extern IntPtr CreateFontIndirectW(ref LOGFONTW lf);
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] static extern int DrawTextW(IntPtr dc, string text, int len, ref RECT r, uint format);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    struct LOGFONTW
+    {
+        public int lfHeight, lfWidth, lfEscapement, lfOrientation, lfWeight;
+        public byte lfItalic, lfUnderline, lfStrikeOut, lfCharSet, lfOutPrecision, lfClipPrecision, lfQuality, lfPitchAndFamily;
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 32)] public string lfFaceName;
+    }
+
+    static readonly Dictionary<(string, float, FontStyle), IntPtr> GrayFonts = new();
+
+    static IntPtr GrayFont(Font f)
+    {
+        var k = (f.Name, f.Size, f.Style);
+        if (GrayFonts.TryGetValue(k, out var h)) return h;
+        var lf = new LOGFONTW();
+        object boxed = lf;
+        f.ToLogFont(boxed);
+        lf = (LOGFONTW)boxed;
+        lf.lfQuality = 4; // ANTIALIASED_QUALITY: hinted grayscale
+        h = CreateFontIndirectW(ref lf);
+        GrayFonts[k] = h;
+        return h;
+    }
+
+    static void GrayText(IntPtr hdc, string s, Font f, Size size, TextFormatFlags flags)
+    {
+        var font = GrayFont(f);
+        var old = SelectObject(hdc, font);
+        SetBkMode(hdc, 1 /*TRANSPARENT*/);
+        SetTextColor(hdc, 0xFFFFFF);
+        var r = new RECT { R = size.Width, B = size.Height };
+        DrawTextW(hdc, s, s.Length, ref r, (uint)flags & 0x0002FFFF);
+        SelectObject(hdc, old);
+    }
+
     const int MaxEntries = 256;
     static readonly Dictionary<string, LinkedListNode<(string Key, Bitmap Bmp)>> Map = new();
     static readonly LinkedList<(string Key, Bitmap Bmp)> Lru = new();
@@ -516,14 +608,19 @@ internal static class AlphaText
 
     static Bitmap Render(string s, Font f, Color c, Size size, TextFormatFlags flags)
     {
-        // Light text: white on black. Dark text: black on white (GDI picks the matching ClearType gamma).
+        // GDI grayscale antialiasing (ANTIALIASED_QUALITY) with full hinting: glyph stems snap to whole pixels,
+        // so text on glass is as sharp as standard Windows grayscale text (ClearType colour can't be composited
+        // over an unknown blurred background, and averaging it softened the edges).
         bool darkText = 0.299 * c.R + 0.587 * c.G + 0.114 * c.B < 128;
         using var mask = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppRgb);
         using (var mg = Graphics.FromImage(mask))
         {
-            mg.Clear(darkText ? Color.White : Color.Black);
-            TextRenderer.DrawText(mg, s, f, new Rectangle(Point.Empty, size), darkText ? Color.Black : Color.White, darkText ? Color.White : Color.Black, flags);
+            mg.Clear(Color.Black);
+            IntPtr hdc = mg.GetHdc();
+            try { GrayText(hdc, s, f, size, flags); }
+            finally { mg.ReleaseHdc(hdc); }
         }
+        _gamma = darkText ? GammaDark : GammaLight;
         var dst = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
         var rect = new Rectangle(Point.Empty, size);
         var sd = mask.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
@@ -539,11 +636,7 @@ internal static class AlphaText
                 System.Runtime.InteropServices.Marshal.Copy(sd.Scan0 + y * sd.Stride, src, 0, n);
                 for (int x = 0; x < n; x += 4)
                 {
-                    int cb = src[x], cg = src[x + 1], cr = src[x + 2];
-                    if (darkText) { cb = 255 - cb; cg = 255 - cg; cr = 255 - cr; }
-                    // Grayscale coverage from the hinted ClearType raster: GDI-sharp stems, no colour fringes
-                    // (subpixel colour cannot be composited correctly over an unknown, blurred background).
-                    int a = (cr + cg + cb + 1) / 3;
+                    int a = _gamma[Math.Max(src[x + 2], Math.Max(src[x + 1], src[x]))];
                     if (a < 3) { row[x] = row[x + 1] = row[x + 2] = row[x + 3] = 0; continue; }
                     a = a * ca / 255;
                     row[x] = (byte)(c.B * a / 255);
