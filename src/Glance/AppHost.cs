@@ -86,7 +86,7 @@ internal sealed class AppHost : ApplicationContext
                 string what = string.IsNullOrWhiteSpace(_s.UpdateNotes) ? "Настройки и история сохранены." : _s.UpdateNotes!;
                 _s.UpdateNotes = null;
                 _s.Save();
-                _toasts.ShowMessage($"Glance обновлён до {AppInfo.VersionText}", what, Glyphs.Check);
+                _toasts.ShowMessage($"Glance обновлён до {AppInfo.VersionText}", what + " Нажмите — что нового.", Glyphs.Check, WhatsNewForm.ShowWindow);
             });
 
         ScheduleUpdateChecks();
@@ -503,6 +503,7 @@ internal sealed class AppHost : ApplicationContext
         w.Checked = Pro.IsActive && _s.Widget;
         if (!Pro.IsActive) m.Item("Glance Pro…", () => Ui.Post(() => ProUi.Prompt(_s)));
         m.Item("Bluetooth", FlyoutForm.OpenBluetoothSettings);
+        m.Item("Что нового", () => Ui.Post(WhatsNewForm.ShowWindow));
         m.Item("Настройки Glance", OpenSettings);
         m.Separator();
         m.Item("Выход", ExitApp);

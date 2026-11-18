@@ -323,3 +323,19 @@ public class HistoryStatsTests
         Assert.Contains(";50;да", csv);
     }
 }
+
+public class ChangelogTests
+{
+    [Fact]
+    public void Parses_versions_bullets_and_nesting()
+    {
+        var md = "# Изменения\n\n## 3.1.0\n- **Бета.** Pro:\n  - виджет\n  - `темы`\n\n## 3.0.0\n- Звуки\n";
+        var e = Changelog.Parse(md);
+        Assert.Equal(2, e.Count);
+        Assert.Equal("3.1.0", e[0].Version);
+        Assert.Equal("Бета. Pro:", e[0].Lines[0].Text);
+        Assert.Equal(1, e[0].Lines[1].Level);
+        Assert.Equal("темы", e[0].Lines[2].Text);
+        Assert.Equal("Звуки", e[1].Lines[0].Text);
+    }
+}

@@ -296,6 +296,11 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
 
         // ── Footer ──
         y += Px(10);
+        var news = new FlatButton(sc, "Открыть");
+        news.Click += (_, _) => WhatsNewForm.ShowWindow();
+        Row("Что нового", "Описание всех версий и изменений", news);
+        y += Px(10);
+
         var folder = new GlassLabel("Открыть папку с данными и журналом", Fonts.Regular(12.5f * sc), t.AccentText, link: true)
         {
             Location = new Point(x + Px(4), y),
