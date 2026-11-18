@@ -419,6 +419,7 @@ internal static class Painter
     [ThreadStatic] public static bool SoftText;
     /// <summary>The glass buffer being painted (enables ClearType on glass), null otherwise.</summary>
     [ThreadStatic] public static Bitmap? Target;
+    [ThreadStatic] public static IntPtr TargetDc;
 
     /// <summary>Liquid Glass specular highlight: soft white sheen over the top of a rounded shape.</summary>
     public static void GlassSheen(Graphics g, RectangleF r, float radius, bool dark)
@@ -455,7 +456,8 @@ internal static class Painter
             return;
         }
         // Glass: real ClearType, blended onto the actual pixels of the surface under the text (see GlassClearType).
-        if (Target is not null && f.Size < 60 && GlassClearType.TryDraw(g, Target, s, f, c, rc, flags)) return;
+        // Glass: DirectWrite grayscale text straight into the premultiplied buffer (see DWriteText).
+        if (Target is not null && TargetDc != IntPtr.Zero && !DWriteText.Failed && DrawDWrite(g, s, f, c, rc, flags)) return;
         if (rc.Width > 0 && rc.Height > 0 && (long)rc.Width * rc.Height <= 1_500_000 && f.Size < 120)
         {
             // Text must never take the app down: on any GDI trouble fall back to GDI+ text below.
@@ -489,6 +491,19 @@ internal static class Painter
     }
 
     static readonly Dictionary<char, (GraphicsPath Path, RectangleF Bounds)> GlyphCache = new();
+
+    static bool DrawDWrite(Graphics g, string s, Font f, Color c, Rectangle rc, TextFormatFlags flags)
+    {
+        float[] el;
+        using (var m = g.Transform) el = m.Elements;
+        if (Math.Abs(el[0] - 1) > 0.001 || Math.Abs(el[3] - 1) > 0.001 || Math.Abs(el[1]) > 0.001 || Math.Abs(el[2]) > 0.001) return false;
+        float dx = el[4], dy = el[5];
+        var cb = g.ClipBounds;
+        var clip = RectangleF.Intersect(new RectangleF(cb.X + dx, cb.Y + dy, cb.Width, cb.Height), new RectangleF(0, 0, Target!.Width, Target.Height));
+        if (clip.Width <= 0 || clip.Height <= 0) return true;
+        g.Flush(System.Drawing.Drawing2D.FlushIntention.Sync);
+        return DWriteText.Draw(TargetDc, Target.Size, s, f, c, new RectangleF(rc.X + dx, rc.Y + dy, rc.Width, rc.Height), clip, flags);
+    }
 
     /// <summary>
     /// Vector icon: the Fluent glyph's outline as a path, fitted into <paramref name="r"/> (keeps aspect) and filled

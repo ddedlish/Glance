@@ -17,7 +17,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
 
-    <Version>4.2.2</Version>
+    <Version>4.2.3</Version>
     <Product>Glance</Product>
     <Authors>ddedlish</Authors>
     <AssemblyTitle>Glance — заряд аксессуаров · by ddedlish</AssemblyTitle>
@@ -53,6 +53,11 @@
   <!-- Update source, injected by CI: -p:GlanceUpdateRepo=owner/repo -->
   <ItemGroup Condition="'$(GlanceUpdateRepo)' != ''">
     <AssemblyMetadata Include="GlanceUpdateRepo" Value="$(GlanceUpdateRepo)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- DirectWrite/Direct2D text on glass (grayscale, gamma-correct, premultiplied alpha — like WinUI/iOS) -->
+    <PackageReference Include="Vortice.Direct2D1" Version="3.*" />
   </ItemGroup>
 
   <ItemGroup>
