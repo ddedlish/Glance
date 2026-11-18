@@ -612,6 +612,7 @@ internal sealed class AppHost : ApplicationContext
         f.CheckUpdatesRequested += () => CheckUpdatesAsync(manual: true);
         f.InstallUpdateRequested += () => { if (_pending is not null) _ = InstallUpdateAsync(_pending); };
         f.HistoryRequested += () => OpenHistory(null);
+        f.BackToPanelRequested += () => Ui.Delay(150, () => OpenFlyout(null));
         f.FormClosed += (_, _) => { _settingsForm = null; Ui.Delay(10_000, TrimMemory); };
         _settingsForm = f;
         f.Show();

@@ -12,7 +12,7 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
     SettingRow? _updateRow;
 
     public event Func<Task<string>>? CheckUpdatesRequested;
-    public event Action? InstallUpdateRequested, HistoryRequested;
+    public event Action? InstallUpdateRequested, HistoryRequested, BackToPanelRequested;
     /// <summary>Version text of an update that is ready to install, if any.</summary>
     public Func<string?> PendingUpdate { get; set; } = () => null;
 
@@ -129,16 +129,20 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         ("Наушники", "Заряд каждого наушника и кейса", '\uE7F6', Color.FromArgb(236, 72, 153)),
         ("Система", "Автозапуск, горячая клавиша, частота опроса", '\uE713', Color.FromArgb(100, 116, 139)),
         ("Обновления", "Версия, проверка и автоустановка", '\uE895', Color.FromArgb(14, 165, 233)),
-        ("Glance Pro", "Виджет, темы, правила устройств, история", '\uE734', Color.FromArgb(245, 158, 11)),
+        ("Glance Pro", "Виджет, темы, правила устройств, история", '\uE735', Color.FromArgb(245, 158, 11)),
         ("О программе", "Что нового, данные, автор", '\uE946', Color.FromArgb(139, 92, 246)),
     };
 
     void BuildHome(ref int y, int x, int w, float sc, Theme t)
     {
         // hero header
-        var title = new GlassLabel("Настройки", Fonts.Strong(22 * sc), t.Text) { Location = new Point(x + Px(4), y), Size = new Size(w, Px(34)) };
+        // back arrow: closes settings and returns to the accessories panel
+        var back = new BackButton(sc) { Location = new Point(x, y + Px(4)) };
+        back.Click += (_, _) => { BackToPanelRequested?.Invoke(); Close(); };
+        _panel.Controls.Add(back);
+        var title = new GlassLabel("Настройки", Fonts.Strong(22 * sc), t.Text) { Location = new Point(x + Px(50), y), Size = new Size(w - Px(50), Px(34)) };
         var sub = new GlassLabel($"Glance {AppInfo.VersionText}" + (Pro.IsActive ? $" · Pro · {Pro.Info!.Owner}" : ""), Fonts.Regular(12.5f * sc), t.SubText)
-            { Location = new Point(x + Px(4), y + Px(34)), Size = new Size(w, Px(20)) };
+            { Location = new Point(x + Px(50), y + Px(32)), Size = new Size(w - Px(50), Px(20)) };
         _panel.Controls.Add(title);
         _panel.Controls.Add(sub);
         y += Px(68);
@@ -175,13 +179,12 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         if (_page is null) BuildHome(ref y, x, w, sc, t);
         else
         {
-            var back = new FlatButton(sc, "‹  Все настройки");
-            back.Location = new Point(x, y);
+            var back = new BackButton(sc) { Location = new Point(x, y) };
             back.Click += (_, _) => Ui.Post(() => OpenPage(null));
             _panel.Controls.Add(back);
-            var title = new GlassLabel(_page, Fonts.Strong(20 * sc), t.Text) { Location = new Point(x + Px(4), y + Px(44)), Size = new Size(w, Px(32)) };
+            var title = new GlassLabel(_page, Fonts.Strong(20 * sc), t.Text) { Location = new Point(x + Px(50), y), Size = new Size(w - Px(50), Px(38)) };
             _panel.Controls.Add(title);
-            y += Px(88);
+            y += Px(56);
         }
 
         void Section(string title) => cur = title;

@@ -476,8 +476,61 @@ internal static class Painter
         return TextRenderer.MeasureText(s, f, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
     }
 
-    public static void Glyph(Graphics g, char glyph, float px, Color c, RectangleF r) =>
-        Text(g, glyph.ToString(), Fonts.Icon(px), c, r, StringAlignment.Center, StringAlignment.Center);
+    /// <summary>Every icon in Glance: drawn as a vector shape (see <see cref="GlyphPath"/>), centred in <paramref name="r"/>.</summary>
+    public static void Glyph(Graphics g, char glyph, float px, Color c, RectangleF r)
+    {
+        var box = new RectangleF(r.X + (r.Width - px) / 2, r.Y + (r.Height - px) / 2, px, px);
+        try { GlyphPath(g, glyph, box, c, 0.92f, Math.Max(0.35f, px / 40f)); }
+        catch { Text(g, glyph.ToString(), Fonts.Icon(px), c, r, StringAlignment.Center, StringAlignment.Center); }
+    }
+
+    static readonly Dictionary<char, (GraphicsPath Path, RectangleF Bounds)> GlyphCache = new();
+
+    /// <summary>
+    /// Vector icon: the Fluent glyph's outline as a path, fitted into <paramref name="r"/> (keeps aspect) and filled
+    /// with antialiasing — razor-sharp at any size and on any background (no ClearType fringes or font hinting blur).
+    /// <paramref name="fill"/> = share of the box the glyph occupies; <paramref name="bold"/> thickens thin strokes.
+    /// </summary>
+    public static void GlyphPath(Graphics g, char glyph, RectangleF r, Color c, float fill = 0.56f, float bold = 0)
+    {
+        if (!GlyphCache.TryGetValue(glyph, out var cached))
+        {
+            var p0 = new GraphicsPath();
+            using (var ff = new FontFamily(Fonts.Icons))
+                p0.AddString(glyph.ToString(), ff, (int)FontStyle.Regular, 100f, PointF.Empty, StringFormat.GenericTypographic);
+            GlyphCache[glyph] = cached = (p0, p0.GetBounds());
+        }
+        using var path = (GraphicsPath)cached.Path.Clone();
+        var b = cached.Bounds;
+        if (b.Width <= 0 || b.Height <= 0) return;
+        float side = Math.Min(r.Width, r.Height) * fill;
+        float k = side / Math.Max(b.Width, b.Height);
+        using (var m = new Matrix())
+        {
+            m.Translate(r.X + (r.Width - b.Width * k) / 2, r.Y + (r.Height - b.Height * k) / 2);
+            m.Scale(k, k);
+            m.Translate(-b.X, -b.Y);
+            path.Transform(m);
+        }
+        var st = g.Save();
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        using (var br = new SolidBrush(c)) g.FillPath(br, path);
+        if (bold > 0) using (var pen = new Pen(c, bold) { LineJoin = LineJoin.Round }) g.DrawPath(pen, path);
+        g.Restore(st);
+    }
+
+    /// <summary>Crisp vector chevron / back arrow (no text glyph).</summary>
+    public static void Chevron(Graphics g, RectangleF r, Color c, float stroke, bool left = false)
+    {
+        float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, h = Math.Min(r.Width, r.Height) * 0.22f;
+        var st = g.Save();
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var pen = new Pen(c, stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        float dx = left ? h * 0.5f : -h * 0.5f;
+        g.DrawLines(pen, new[] { new PointF(cx + dx, cy - h), new PointF(cx - dx, cy), new PointF(cx + dx, cy + h) });
+        g.Restore(st);
+    }
 
     public static void Sparkline(Graphics g, RectangleF r, IReadOnlyList<Sample> samples, Color color, float scale)
     {

@@ -389,17 +389,52 @@ internal sealed class TileButton : ThemedControl
         Painter.GlassSheen(g, r, rad, T.Dark);
         Painter.StrokeRound(g, r, rad, _lift > 0.5f ? Theme.Alpha(_color, 140) : T.Border, Math.Max(1, s));
 
-        // icon in a soft gradient circle
-        float d = 40 * s;
+        // app-style icon badge: rounded square, vertical gradient, top highlight, vector glyph
+        float d = 42 * s;
         var c = new RectangleF(16 * s, 16 * s, d, d);
-        using (var br = new System.Drawing.Drawing2D.LinearGradientBrush(c, Theme.Mix(_color, Color.White, 0.25f), _color, 45f))
-            g.FillEllipse(br, c);
-        Painter.Glyph(g, _glyph, 17 * s, Color.White, c);
+        using (var bp = Painter.Round(c, 12 * s))
+        {
+            using (var br = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(c.X, c.Y - 1, c.Width, c.Height + 2), Theme.Mix(_color, Color.White, 0.22f), Theme.Mix(_color, Color.Black, 0.12f), 90f))
+                g.FillPath(br, bp);
+            var st = g.Save();
+            g.SetClip(bp, System.Drawing.Drawing2D.CombineMode.Intersect);
+            using (var hl = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(c.X, c.Y - 1, c.Width, c.Height * 0.5f + 2), Color.FromArgb(70, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f))
+                g.FillRectangle(hl, c.X, c.Y, c.Width, c.Height * 0.5f);
+            g.Restore(st);
+        }
+        Painter.GlyphPath(g, _glyph, c, Color.White, 0.50f, 0.6f * s);
 
-        float tx = 16 * s, ty = c.Bottom + 10 * s, tw = Width - 32 * s;
+        float tx = 16 * s, ty = c.Bottom + 12 * s, tw = Width - 32 * s;
         Painter.Text(g, _title, Fonts.Strong(14 * s), T.Text, new RectangleF(tx, ty, tw - 14 * s, 22 * s));
         Painter.Text(g, _sub, Fonts.Regular(12 * s), T.SubText, new RectangleF(tx, ty + 22 * s, tw, Height - ty - 26 * s), StringAlignment.Near, StringAlignment.Near, wrap: true);
-        Painter.Text(g, "›", Fonts.Strong(18 * s), T.SubText, new RectangleF(Width - 30 * s + 3 * s * _lift, 18 * s, 20 * s, 30 * s), StringAlignment.Center);
+        Painter.Chevron(g, new RectangleF(Width - 38 * s + 3 * s * _lift, 22 * s, 24 * s, 30 * s), Theme.Alpha(T.SubText, 200), 2f * s);
+        FocusRing(g);
+    }
+}
+
+/// <summary>Round icon button with a vector back arrow (settings header).</summary>
+internal sealed class BackButton : ThemedControl
+{
+    public BackButton(float scale) : base(scale)
+    {
+        Size = new Size(Px(38), Px(38));
+        Cursor = Cursors.Hand;
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (e.KeyCode is Keys.Enter or Keys.Space) OnClick(EventArgs.Empty);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        Painter.Prepare(g);
+        var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
+        Painter.FillRound(g, r, r.Height / 2, Pressed ? T.SurfaceHover : Hot ? T.SurfaceHover : T.Surface);
+        Painter.StrokeRound(g, r, r.Height / 2, T.Border, Math.Max(1, Sc));
+        Painter.Chevron(g, new RectangleF(r.X - 1 * Sc, r.Y, r.Width, r.Height), T.Text, 2.2f * Sc, left: true);
         FocusRing(g);
     }
 }
