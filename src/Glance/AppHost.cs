@@ -4,7 +4,7 @@ namespace Glance;
 /// Composition root: wires providers → registry → tray / popups / alerts.
 /// Everything here runs on the UI thread.
 /// </summary>
-internal sealed class AppHost : ApplicationContext
+internal sealed partial class AppHost : ApplicationContext
 {
     readonly AppSettings _s;
     readonly HistoryStore _h;
@@ -81,6 +81,7 @@ internal sealed class AppHost : ApplicationContext
 
         // On autostart give the system a few seconds to settle (less contention at logon).
         Ui.Delay(autostart ? 5000 : 10, StartMonitoring);
+        if (Program.SelfTestDir is not null) Ui.Delay(1500, () => _ = RunSelfTestAsync(Program.SelfTestDir));
         if (afterUpdate)
             Ui.Delay(1500, () =>
             {
@@ -779,10 +780,12 @@ internal sealed class AppHost : ApplicationContext
             _exiting = true;
             try
             {
+                if (Program.SelfTestDir is not null) throw new OperationCanceledException(); // demo data is never saved
                 _r.PersistAll();
                 _s.SaveNow();
                 _h.SaveNow();
             }
+            catch (OperationCanceledException) { }
             catch (Exception e) { Log.Error("Save on exit", e); }
 
             _showWait?.Unregister(null);

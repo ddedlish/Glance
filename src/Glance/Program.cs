@@ -6,6 +6,9 @@ namespace Glance;
 
 internal static class Program
 {
+    /// <summary>Set by --selftest &lt;dir&gt;: runs a scripted UI tour, saves screenshots + report, exits.</summary>
+    public static string? SelfTestDir;
+
     public const string ShowEventName = @"Local\Glance.ShowFlyout";
     const string MutexName = @"Local\Glance.SingleInstance";
 
@@ -47,11 +50,14 @@ internal static class Program
             return 0;
         }
 
+        SelfTestDir = After("--selftest");
+        if (SelfTestDir is not null) Directory.CreateDirectory(SelfTestDir);
+
         bool afterUpdate = Has("--after-update");
         bool autostart = Has("--autostart");
 
         // ── First run from Downloads: simple installer (portable use: --portable or portable.txt next to the exe) ──
-        if (!Has("--portable") && !afterUpdate && !autostart && !Installer.IsInstalledCopy())
+        if (!Has("--portable") && SelfTestDir is null && !afterUpdate && !autostart && !Installer.IsInstalledCopy())
         {
             using var setup = new SetupForm();
             setup.ShowDialog(); // installs and launches the installed copy
@@ -92,7 +98,7 @@ internal static class Program
                 using var host = new AppHost(autostart, afterUpdate);
                 Application.Run(host);
                 SafeMode.End();
-                return 0;
+                return host.SelfTestExitCode;
             }
             catch (Exception e)
             {

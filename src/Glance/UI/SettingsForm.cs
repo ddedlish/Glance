@@ -113,6 +113,10 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
     }
 
     /// <summary>Opens a settings page (null = the tiles home) with a quick slide-in.</summary>
+    /// <summary>Self-test: opens a page by its tile title.</summary>
+    internal void OpenPageForTest(string? page) => OpenPage(page);
+    internal static IEnumerable<string> PageTitles => Pages.Select(p => p.Title);
+
     void OpenPage(string? page)
     {
         _page = page;

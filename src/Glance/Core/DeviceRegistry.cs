@@ -28,6 +28,9 @@ internal sealed class DeviceRegistry
 
     public IEnumerable<Accessory> All => _map.Values;
     public IEnumerable<Accessory> ConnectedDevices => _map.Values.Where(a => a.Connected);
+    /// <summary>Self-test only: shows a demo device without touching saved data.</summary>
+    public void AddDemo(Accessory a) { _map[a.Key] = a; ListChanged?.Invoke(); }
+
     public Accessory? Get(string key) => _map.TryGetValue(key, out var a) ? a : null;
 
     /// <summary>Restores devices seen in previous sessions (for "был в сети" + last level).</summary>
