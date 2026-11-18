@@ -14,6 +14,7 @@ internal static class DWriteText
     static ID2D1Factory? _factory;
     static IDWriteFactory? _dw;
     static ID2D1DCRenderTarget? _rt;
+    static ID2D1SolidColorBrush? _brush;
     static readonly Dictionary<(string, float, System.Drawing.FontStyle, int), IDWriteTextFormat> Formats = new();
     public static bool Failed;
 
@@ -34,13 +35,16 @@ internal static class DWriteText
                 _rt.TextAntialiasMode = Vortice.Direct2D1.TextAntialiasMode.Grayscale;
                 _rt.AntialiasMode = AntialiasMode.PerPrimitive;
             }
-            _rt.BindDC(hdc, new Vortice.RawRect(0, 0, buffer.Width, buffer.Height));
+            // Bind only the pixels the text can touch: a DC render target copies the bound area in and out on
+            // every draw, so binding the whole window per string was what made panels and settings stutter.
+            var area = Rectangle.Intersect(Rectangle.Round(RectangleF.Intersect(RectangleF.Inflate(r, 2, 2), clip)), new Rectangle(Point.Empty, buffer));
+            if (area.Width <= 0 || area.Height <= 0) return true;
+            _rt.BindDC(hdc, new Vortice.RawRect(area.Left, area.Top, area.Right, area.Bottom));
             var fmt = Format(f, flags);
             _rt.BeginDraw();
-            _rt.PushAxisAlignedClip(new Vortice.Mathematics.Rect(clip.X, clip.Y, clip.Width, clip.Height), AntialiasMode.Aliased);
-            using (var brush = _rt.CreateSolidColorBrush(new Vortice.Mathematics.Color4(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f)))
-                _rt.DrawText(s, fmt, new Vortice.Mathematics.Rect(r.X, r.Y, r.Width, r.Height), brush, DrawTextOptions.Clip);
-            _rt.PopAxisAlignedClip();
+            _brush ??= _rt.CreateSolidColorBrush(new Vortice.Mathematics.Color4(1, 1, 1, 1));
+            _brush.Color = new Vortice.Mathematics.Color4(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);
+            _rt.DrawText(s, fmt, new Vortice.Mathematics.Rect(r.X - area.X, r.Y - area.Y, r.Width, r.Height), _brush, DrawTextOptions.Clip);
             _rt.EndDraw();
             return true;
         }
@@ -48,7 +52,8 @@ internal static class DWriteText
         {
             Failed = true;
             Log.Error("DirectWrite text", e);
-            try { _rt?.Dispose(); } catch { }
+            try { _brush?.Dispose(); _rt?.Dispose(); } catch { }
+            _brush = null;
             _rt = null;
             return false;
         }

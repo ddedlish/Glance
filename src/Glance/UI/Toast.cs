@@ -216,9 +216,13 @@ internal sealed class ToastForm : CardForm
 
         // header
         var ic = new RectangleF(16 * s, 16 * s, 40 * s, 40 * s);
-        Painter.FillRound(g, ic, 20 * s, Theme.Alpha(accent, 50));
-        char glyph = Kind switch { ToastKind.Low => Glyphs.Warning, ToastKind.Charged => Glyphs.Check, _ => Glyphs.For(a.Kind) };
-        Painter.Glyph(g, glyph, 18 * s, Kind == ToastKind.Connected && a.Profile.BrandColor is Color bc ? bc : (Kind == ToastKind.Connected ? t.AccentText : accent), ic);
+        if (Kind == ToastKind.Connected) DeviceCard.Badge(g, ic, a, !a.Connected); // app-style coloured badge
+        else
+        {
+            using (var bp = Painter.Round(ic, 12 * s))
+            using (var br = new SolidBrush(accent)) g.FillPath(br, bp);
+            Painter.GlyphPath(g, Kind == ToastKind.Low ? Glyphs.Warning : Glyphs.Check, ic, Color.White, 0.5f, 0.5f * s);
+        }
 
         string kicker = Kind switch
         {
@@ -263,15 +267,27 @@ internal sealed class ToastForm : CardForm
         else if (!NoData())
         {
             int? lvl = a.Level;
-            int? shown = lvl is int x ? (int)Math.Round(x * _grow) : null;
-            // Big draining battery + number
-            var batt = new RectangleF(16 * s, y + 2 * s, 74 * s, 34 * s);
-            IconRenderer.DrawBigBattery(g, batt, shown, a.Charging, t.Text, t.BarColor(lvl, a.Charging, Svc.Low), t.Track);
-            var pf = Fonts.Big(30 * s);
-            Painter.Text(g, Fmt.Percent(shown), pf, t.LevelColor(lvl, a.Charging, Svc.Low), new RectangleF(batt.Right + 16 * s, y - 2 * s, 140 * s, 42 * s));
-            if (Svc.Estimate(a) is null && a.SystemSource is string src)
-                Painter.Text(g, src == "Windows" ? "по данным Windows" : src == "GATT" ? "Bluetooth LE" : "контроллер", Fonts.Regular(12 * s), t.SubText,
-                    new RectangleF(W - 150 * s, y + 10 * s, 134 * s, 18 * s), StringAlignment.Far);
+            float shownF = lvl is int x ? x * _grow : 0;
+            // iOS-style: a thick capsule that fills up, the number on the right, what it means underneath
+            var pf = Fonts.Big(24 * s);
+            float pw = Painter.Width(g, "100%", pf) + 6 * s;
+            var bar = new RectangleF(16 * s, y + 6 * s, W - 32 * s - pw - 12 * s, 12 * s);
+            Painter.FillRound(g, bar, bar.Height / 2, Theme.Alpha(t.Track, 200));
+            if (shownF > 0.5f)
+            {
+                var fill = new RectangleF(bar.X, bar.Y, Math.Max(bar.Height, bar.Width * shownF / 100f), bar.Height);
+                var col = t.BarColor(lvl, a.Charging, Svc.Low);
+                using var fp = Painter.Round(fill, bar.Height / 2);
+                using var fb = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(fill.X, fill.Y - 1, fill.Width, fill.Height + 2), Theme.Mix(col, Color.White, 0.25f), col, 90f);
+                g.FillPath(fb, fp);
+            }
+            Painter.Text(g, lvl is null ? "—" : $"{(int)MathF.Round(shownF)}%", pf, t.LevelColor(lvl, a.Charging, Svc.Low),
+                new RectangleF(W - 16 * s - pw, y - 4 * s, pw, 32 * s), StringAlignment.Far);
+            string note = a.Charging
+                ? (Svc.Estimate(a) is TimeSpan c ? $"Заряжается · до полного ~{Fmt.Duration(c)}" : "Заряжается")
+                : Svc.Estimate(a) is TimeSpan e ? $"Хватит примерно на {Fmt.Duration(e)}"
+                : a.SystemSource switch { "Windows" => "по данным Windows", "GATT" => "Bluetooth LE", null => "", _ => "контроллер" };
+            Painter.Text(g, note, Fonts.Regular(12 * s), t.SubText, new RectangleF(16 * s, bar.Bottom + 6 * s, bar.Width, 18 * s));
             y += 46 * s;
         }
 

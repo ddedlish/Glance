@@ -701,6 +701,7 @@ internal sealed class AppHost : ApplicationContext
     {
         var line = (r.Notes ?? "").Split('\n').Select(l => l.Trim().TrimStart('-', '*', '•', ' ').Trim())
             .FirstOrDefault(l => l.Length > 0 && !l.StartsWith('#') && !l.StartsWith("**", StringComparison.Ordinal));
+        if (line is not null) line = line.Replace("**", "").Replace("`", "").Trim();
         string tail = "Настройки и история сохранятся.";
         if (string.IsNullOrEmpty(line)) return "Скачается только изменившаяся часть. " + tail;
         if (line.Length > 110) line = line[..107].TrimEnd() + "…";
