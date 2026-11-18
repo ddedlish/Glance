@@ -260,8 +260,8 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         Section("Значки в трее");
         Row("Значки", "Отдельный для каждого устройства или один общий", Seg(new[] { "Для каждого", "Один общий" },
             _s.TrayMode == TrayMode.PerDevice ? 0 : 1, i => _s.TrayMode = i == 0 ? TrayMode.PerDevice : TrayMode.Single));
-        IconStyle[] styles = { IconStyle.Device, IconStyle.Battery, IconStyle.Number, IconStyle.BatteryNumber };
-        Row("Вид значка", "Мышь, клавиатура, наушники… или батарея", Seg(new[] { "Устройство", "Батарея", "%", "Батарея+%" },
+        IconStyle[] styles = { IconStyle.Ring, IconStyle.Device, IconStyle.Battery, IconStyle.Number, IconStyle.BatteryNumber };
+        Row("Вид значка", "Кольцо заряда вокруг устройства, или батарея. Общий значок — столбики всех устройств", Seg(new[] { "Кольцо", "Устройство", "Батарея", "%", "Бат.+%" },
             Math.Max(0, Array.IndexOf(styles, _s.IconStyle)), i => _s.IconStyle = styles[i]));
         Row("Устройства без данных о заряде", "Показывать значок «?» для мышей и клавиатур на приёмниках 2.4 ГГц", Toggle(_s.ShowUnknownInTray, v => _s.ShowUnknownInTray = v));
         Row("Карточка при наведении", "Заряд каждого наушника и кейса вместо обычной подсказки", Toggle(_s.RichHover, v => _s.RichHover = v));

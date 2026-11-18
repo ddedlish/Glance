@@ -391,6 +391,10 @@ internal sealed class AppHost : ApplicationContext
 
         bool dark = Theme.Current.TaskbarDark;
         int size = IconRenderer.Size;
+        var withLevel = visible.Where(v => v.WeakestLevel is not null).OrderBy(v => v.WeakestLevel).Take(3).ToList();
+        bool anyLow = visible.Any(v => v.WeakestLevel is int l && l <= _s.LowBatteryThreshold && !v.Charging);
+        bool Critical(Accessory v) => v.WeakestLevel is int l && l <= _s.CriticalThreshold && !v.Charging;
+        bool first = true;
         foreach (var (key, a) in want)
         {
             if (!_icons.TryGetValue(key, out var icon))
@@ -401,19 +405,29 @@ internal sealed class AppHost : ApplicationContext
             }
             string tip = key == SummaryKey ? string.Join("\n", visible.Take(4).Select(Svc.Tooltip)) : Svc.Tooltip(a);
             if (_pending is not null) tip = UpdateTip + "\n" + tip; // first line: survives the 128-char tooltip limit
-            int phase = a.Charging ? _chargePhase : -1;
-            string sig = $"{a.WeakestLevel}|{a.Charging}|{phase}|{tip}|{_s.IconStyle}|{a.Kind}|{_s.RichHover}|{_s.LowBatteryThreshold}|{dark}|{size}";
+            bool summary = key == SummaryKey && withLevel.Count >= 2;
+            bool animated = summary ? withLevel.Any(v => v.Charging) : a.Charging || Critical(a);
+            int phase = animated ? _chargePhase : -1;
+            // badge: blue = update ready (first icon), red = something is low (summary icon)
+            var badge = first && _pending is not null ? IconRenderer.Badge.Update
+                      : key == SummaryKey && anyLow ? IconRenderer.Badge.Low : IconRenderer.Badge.None;
+            first = false;
+            string levels = summary ? string.Join(",", withLevel.Select(v => $"{v.WeakestLevel}{(v.Charging ? "c" : "")}")) : "";
+            string sig = $"{a.WeakestLevel}|{a.Charging}|{phase}|{badge}|{levels}|{tip}|{_s.IconStyle}|{a.Kind}|{_s.RichHover}|{_s.LowBatteryThreshold}|{dark}|{size}";
             if (_iconSig.TryGetValue(key, out var old) && old == sig) continue;
-            icon.Set(IconRenderer.Device(a.WeakestLevel, a.Charging, _s.IconStyle, _s.LowBatteryThreshold, a.Kind, phase), tip, _s.RichHover);
+            var img = summary
+                ? IconRenderer.Summary(withLevel.Select(v => (v.WeakestLevel, v.Charging)).ToList(), _s.LowBatteryThreshold, phase, badge)
+                : IconRenderer.Device(a.WeakestLevel, a.Charging, _s.IconStyle, _s.LowBatteryThreshold, a.Kind, phase, badge, breathe: Critical(a));
+            icon.Set(img, tip, _s.RichHover);
             _iconSig[key] = sig;
         }
 
-        // Animated tray icon while something is charging (one cheap redraw every 0.7 s, stops when done).
-        bool anyCharging = want.Any(w => w.A.Charging);
+        // Animated tray icon while something is charging or critical (one cheap redraw every 0.7 s, stops when done).
+        bool anyCharging = visible.Any(v => v.Charging || Critical(v));
         if (anyCharging && _chargeTimer is null)
         {
             _chargeTimer = new System.Windows.Forms.Timer { Interval = 700 };
-            _chargeTimer.Tick += (_, _) => { _chargePhase = (_chargePhase + 1) % 3; SyncTray(); };
+            _chargeTimer.Tick += (_, _) => { _chargePhase = (_chargePhase + 1) % 6; SyncTray(); };
         }
         if (_chargeTimer is not null && _chargeTimer.Enabled != anyCharging)
         {

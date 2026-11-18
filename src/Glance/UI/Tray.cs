@@ -276,7 +276,10 @@ internal static class IconRenderer
     /// Renders the tray icon at 8× the tray size and downsamples with high-quality bicubic filtering:
     /// crisp, evenly antialiased edges and digits at every DPI (16–32 px), no blur.
     /// </summary>
-    public static Icon Device(int? level, bool charging, IconStyle style, int low, DeviceKind kind = DeviceKind.Unknown, int phase = -1)
+    /// <summary>Corner badge: none, red (something is low) or blue (an update is ready).</summary>
+    public enum Badge { None, Low, Update }
+
+    public static Icon Device(int? level, bool charging, IconStyle style, int low, DeviceKind kind = DeviceKind.Unknown, int phase = -1, Badge badge = Badge.None, bool breathe = false)
     {
         int sz = Size, big = sz * Supersample;
         using var hi = new Bitmap(big, big, PixelFormat.Format32bppArgb);
@@ -289,8 +292,9 @@ internal static class IconRenderer
             Painter.SoftText = true;
             try
             {
-                _phase = charging ? phase : -1;
-                if (style == IconStyle.Device) DeviceIcon(g, big, level, charging, low, kind);
+                _phase = charging && phase >= 0 ? phase % 3 : -1;
+                if (style == IconStyle.Ring || (level is null && style != IconStyle.Device)) RingIcon(g, big, level, charging, low, kind, breathe && phase % 2 == 1);
+                else if (style == IconStyle.Device) DeviceIcon(g, big, level, charging, low, kind);
                 else if (Theme.Current.Glass)
                 {
                     if (style == IconStyle.Number) GlassNumber(g, big, level, charging, low);
@@ -304,9 +308,108 @@ internal static class IconRenderer
                 }
             }
             finally { Painter.SoftText = false; }
+            DrawBadge(g, big, badge);
         }
         using var bmp = Downsample(hi, sz);
         return ToIcon(bmp);
+    }
+
+    /// <summary>
+    /// «Эквалайзер» for the single summary icon: one rounded column per device (up to 3), height = charge,
+    /// colour = state. All accessories at a glance.
+    /// </summary>
+    public static Icon Summary(IReadOnlyList<(int? Level, bool Charging)> devices, int low, int phase = -1, Badge badge = Badge.None)
+    {
+        int sz = Size, big = sz * Supersample;
+        using var hi = new Bitmap(big, big, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(hi))
+        {
+            g.Clear(Color.Transparent);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            float u = big / 16f;
+            phase = phase < 0 ? -1 : phase % 3;
+            int n = Math.Clamp(devices.Count, 1, 3);
+            float gap = 1.6f * u, colW = (15.2f * u - gap * (n - 1)) / n, x = 0.4f * u;
+            bool dark = Dark;
+            for (int i = 0; i < n; i++)
+            {
+                var (lvl, ch) = devices[i];
+                var col = new RectangleF(x, 1.2f * u, colW, 13.6f * u);
+                float rad = Math.Min(colW / 2, 2.6f * u);
+                using (var halo = new Pen(dark ? Color.FromArgb(110, 0, 0, 0) : Color.FromArgb(140, 255, 255, 255), 1.4f * u))
+                using (var hp = Painter.Round(col, rad)) g.DrawPath(halo, hp);
+                using (var tb = new SolidBrush(dark ? Color.FromArgb(80, 255, 255, 255) : Color.FromArgb(55, 0, 0, 0)))
+                using (var tp = Painter.Round(col, rad)) g.FillPath(tb, tp);
+                if (lvl is int l)
+                {
+                    float frac = Math.Clamp(l / 100f, 0.12f, 1f);
+                    var fill = GlassFill(lvl, ch, low);
+                    if (ch && phase >= 0)
+                    {
+                        float to = frac + (1 - frac) * (phase + 1) / 3f;
+                        var fr = new RectangleF(col.X, col.Bottom - col.Height * to, col.Width, col.Height * to);
+                        using var fp = Painter.Round(fr, rad);
+                        using var fb = new SolidBrush(Theme.Alpha(Lighten(fill, 0.35f), 90));
+                        g.FillPath(fb, fp);
+                    }
+                    var lv = new RectangleF(col.X, col.Bottom - col.Height * frac, col.Width, col.Height * frac);
+                    using var lp = Painter.Round(lv, rad);
+                    using var lg = new LinearGradientBrush(new RectangleF(lv.X - 1, lv.Y, lv.Width + 2, lv.Height), Lighten(fill, 0.3f), fill, LinearGradientMode.Horizontal);
+                    g.FillPath(lg, lp);
+                }
+                x += colW + gap;
+            }
+            DrawBadge(g, big, badge);
+        }
+        using var bmp = Downsample(hi, sz);
+        return ToIcon(bmp);
+    }
+
+    /// <summary>
+    /// Ring style: the accessory in the centre (detailed vector icon with a soft shadow) inside a ring that drains
+    /// clockwise and changes colour. No data → the device alone, dimmed (never a question mark).
+    /// </summary>
+    static void RingIcon(Graphics g, int S, int? level, bool charging, int low, DeviceKind kind, bool dimPhase)
+    {
+        float u = S / 16f;
+        bool dark = Dark;
+        var fg = dark ? Color.White : Color.FromArgb(22, 22, 26);
+        var fill = GlassFill(level, charging, low);
+        var ring = new RectangleF(1.3f * u, 1.3f * u, 13.4f * u, 13.4f * u);
+        float th = 2.3f * u;
+        using (var halo = new Pen(dark ? Color.FromArgb(120, 0, 0, 0) : Color.FromArgb(150, 255, 255, 255), th + 1.4f * u))
+            g.DrawEllipse(halo, ring);
+        using (var track = new Pen(dark ? Color.FromArgb(85, 255, 255, 255) : Color.FromArgb(60, 0, 0, 0), th))
+            g.DrawEllipse(track, ring);
+        if (level is int l)
+        {
+            float frac = Math.Clamp(l / 100f, 0.04f, 1f);
+            if (charging && _phase >= 0)
+                using (var flow = new Pen(Theme.Alpha(Lighten(fill, 0.35f), 110), th) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    g.DrawArc(flow, ring, -90, 360f * (frac + (1 - frac) * (_phase + 1) / 3f));
+            var arcColor = dimPhase ? Theme.Alpha(fill, 120) : fill; // critical: the ring «breathes»
+            using var arc = new Pen(arcColor, th) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawArc(arc, ring, -90, 360f * frac);
+        }
+        // the device itself
+        var inner = RectangleF.Inflate(ring, -3.0f * u, -3.0f * u);
+        var glyphColor = level is null ? Theme.Alpha(fg, 150) : fg;
+        var shadow = RectangleF.Inflate(inner, 0, 0); shadow.Offset(0, 0.5f * u);
+        Painter.GlyphPath(g, Glyphs.For(kind), shadow, dark ? Color.FromArgb(110, 0, 0, 0) : Color.FromArgb(90, 255, 255, 255), 0.95f, 1.6f * u);
+        Painter.GlyphPath(g, Glyphs.For(kind), inner, glyphColor, 0.95f, 0.55f * u);
+        if (charging) Bolt(g, new RectangleF(9.6f * u, 8.4f * u, 6.4f * u, 7.6f * u));
+    }
+
+    static void DrawBadge(Graphics g, int S, Badge badge)
+    {
+        if (badge == Badge.None) return;
+        float u = S / 16f;
+        var dot = new RectangleF(10.6f * u, 0.2f * u, 5.2f * u, 5.2f * u);
+        using (var halo = new SolidBrush(Dark ? Color.FromArgb(200, 20, 20, 24) : Color.FromArgb(220, 255, 255, 255)))
+            g.FillEllipse(halo, RectangleF.Inflate(dot, 0.9f * u, 0.9f * u));
+        using var b = new SolidBrush(badge == Badge.Low ? Theme.VividRed : Color.FromArgb(10, 132, 255));
+        g.FillEllipse(b, dot);
     }
 
     static Bitmap Downsample(Bitmap src, int size)
