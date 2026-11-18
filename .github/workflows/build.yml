@@ -80,6 +80,19 @@ jobs:
             if ($p.ExitCode -ne 0) { Write-Host "::error::Self-test ($mode) failed: exit $($p.ExitCode)"; $fail = $true }
           }
           if ($fail) { exit 1 }
+      # Screenshots also go to the «selftest» branch (always the latest run), readable with plain git.
+      - name: Publish self-test screenshots
+        if: always() && matrix.rid == 'win-x64' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path selftest)) { exit 0 }
+          Set-Location selftest
+          git init -q -b selftest
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Self-test ${{ needs.version.outputs.v }} (${{ github.sha }})"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" selftest
       - uses: actions/upload-artifact@v4
         if: always() && matrix.rid == 'win-x64'
         with:
@@ -128,6 +141,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: Glance-*
           merge-multiple: true
       - name: Delta-update block maps
         working-directory: artifacts
