@@ -107,7 +107,7 @@ internal static class Updater
                     else Notify(u);
                 });
             }
-            catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
+            catch (System.OperationCanceledException) when (cts.IsCancellationRequested) { }
             catch (Exception e)
             {
                 Log.Error("Android update download", e);
