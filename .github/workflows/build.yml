@@ -211,7 +211,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash build/android-selftest.sh dista/Glance-Android-${{ needs.version.outputs.v }}.apk selftest-android
       - name: Publish Android self-test screenshots
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
         run: |
           [ -d selftest-android ] || exit 0
           cd selftest-android
