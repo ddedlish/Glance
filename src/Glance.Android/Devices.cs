@@ -61,7 +61,6 @@ internal sealed class Devices
             f.AddAction(BluetoothDevice.ActionAclConnected);
             f.AddAction(BluetoothDevice.ActionAclDisconnected);
             f.AddAction(BluetoothAdapter.ActionStateChanged);
-            f.AddAction(Intent.ActionBatteryChanged);
             try
             {
                 if (OperatingSystem.IsAndroidVersionAtLeast(33)) _ctx.RegisterReceiver(_rx, f, ReceiverFlags.Exported);
@@ -85,7 +84,7 @@ internal sealed class Devices
 
     void OnBroadcast(Intent i)
     {
-        if (i.Action == Intent.ActionBatteryChanged) { if (!Demo) { ReadPhone(i); Changed?.Invoke(); } return; }
+        if (i.Action == Intent.ActionBatteryChanged) return; // the phone's own battery is not shown
         // The battery report and connection changes arrive a moment before the hidden getters update.
         Refresh();
         _main.PostDelayed(Refresh, 1500);
@@ -135,6 +134,8 @@ internal sealed class Devices
                 a.Connected = connected;
                 if (!connected) continue;
                 a.LastSeen = DateTime.Now;
+                // show the remembered case level right away, before the first earbud broadcast
+                if (a.Profile.Buds != BudsSource.None && !a.Case.Known && LastCase(key) is { } lc) a.Case = new Part(lc.Level, false);
                 if (Hidden.Int(d, "getBatteryLevel") is int lvl && lvl is >= 0 and <= 100)
                 {
                     a.SystemLevel = lvl;
@@ -184,6 +185,35 @@ internal sealed class Devices
     // ───────── per-bud levels from BLE adverts (AirPods, Fast Pair) ─────────
 
     readonly Dictionary<string, DateTime> _caseAt = new(StringComparer.Ordinal);
+
+    /// <summary>When the shown case level was last reported live; null when it is live right now.</summary>
+    public TimeSpan? CaseAge(string key) =>
+        _caseAt.TryGetValue(key, out var at) && DateTime.UtcNow - at > TimeSpan.FromSeconds(90) ? DateTime.UtcNow - at : null;
+
+    void SaveCase(string key, int level)
+    {
+        _caseAt[key] = DateTime.UtcNow;
+        try
+        {
+            _ctx.GetSharedPreferences("glance", FileCreationMode.Private)?.Edit()
+                ?.PutInt("case:" + key, level)?.PutLong("caseAt:" + key, DateTimeOffset.UtcNow.ToUnixTimeSeconds())?.Apply();
+        }
+        catch { }
+    }
+
+    (int Level, DateTime At)? LastCase(string key)
+    {
+        try
+        {
+            var p = _ctx.GetSharedPreferences("glance", FileCreationMode.Private);
+            if (p is null || !p.Contains("case:" + key)) return null;
+            var at = DateTimeOffset.FromUnixTimeSeconds(p.GetLong("caseAt:" + key, 0)).UtcDateTime;
+            if (DateTime.UtcNow - at > TimeSpan.FromDays(3)) return null;
+            _caseAt[key] = at;
+            return (p.GetInt("case:" + key, 0), at);
+        }
+        catch { return null; }
+    }
 
     static readonly ParcelUuid FastPairUuid = ParcelUuid.FromString("0000fe2c-0000-1000-8000-00805f9b34fb")!;
 
@@ -239,10 +269,12 @@ internal sealed class Devices
             && Math.Abs(Math.Min(ad.Left.Level ?? bud, ad.Right.Level ?? bud) - sys) > 25) return;
         // The case reports its charge only while it is open or a bud sits in it; the rest of the time adverts say
         // «unknown». Keep the last known case level (like iOS does) instead of blanking it.
-        var caseNow = ad.Case.Known ? ad.Case
-            : target.Case.Known && DateTime.UtcNow - _caseAt.GetValueOrDefault(target.Key) < TimeSpan.FromHours(12) ? target.Case with { Charging = false }
-            : Part.Unknown;
-        if (ad.Case.Known) _caseAt[target.Key] = DateTime.UtcNow;
+        // The case reports its charge only while it is open or a bud sits in it (JBL, Sony and others send
+        // «unknown» once the buds are in the ears). Remember the last real value — across restarts — and show it
+        // marked with its age, like iOS does.
+        Part caseNow;
+        if (ad.Case.Known) { caseNow = ad.Case; SaveCase(target.Key, ad.Case.Level!.Value); }
+        else caseNow = LastCase(target.Key) is { } lc ? new Part(lc.Level, false) : Part.Unknown;
         bool changed = target.Left != ad.Left || target.Right != ad.Right || target.Case != caseNow;
         target.Left = ad.Left;
         target.Right = ad.Right;

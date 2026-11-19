@@ -34,7 +34,7 @@ internal sealed class Backdrop : View
 
 /// <summary>
 /// The whole screen, drawn by hand: header, hero card with the live liquid ring, one glass card per accessory
-/// (earbuds get L / R / case rings), the phone itself, and banners (permission, Bluetooth off, update).
+/// (earbuds get L / R / case rings), the shade switch, and banners (permission, Bluetooth off, update).
 /// Lives inside a ScrollView: reports its content height in OnMeasure.
 /// </summary>
 internal sealed class GlanceView : View
@@ -54,6 +54,11 @@ internal sealed class GlanceView : View
     /// <summary>«Заряд в шторке» switch at the bottom (the always-on notification).</summary>
     public bool ShadeOn { get; set; } = true;
     public event Action<bool>? ShadeToggled;
+
+    /// <summary>False until «Поверх других приложений» is allowed: a banner offers the connect popup.</summary>
+    public bool PopupAllowed { get; set; } = true;
+    public event Action? PopupPermissionRequested;
+    RectF _popR = new();
 
     // hit areas
     RectF _heroR = new(), _permR = new(), _updR = new(), _shadeR = new();
@@ -84,11 +89,11 @@ internal sealed class GlanceView : View
     {
         float y = TopInset / _d + 96;
         if (Update is not null) y += BannerH + Gap;
+        if (!PopupAllowed && !_dev.Demo) y += BannerH + Gap;
         if (_dev.MissingPermission || _dev.BluetoothOff || _dev.NoBluetooth) y += BannerH + 28 + Gap;
         if (Hero(list) is not null) y += HeroH + Gap + 28;
         if (list.Count == 0) y += 200;
         else y += 28 + list.Sum(a => (a.HasParts ? BudsH : CardH) + Gap);
-        if (_dev.PhoneLevel is not null) y += 28 + CardH + Gap;
         y += 28 + ShadeH + Gap;
         y += 40;
         return Dp(y) + BottomInset;
@@ -152,6 +157,15 @@ internal sealed class GlanceView : View
         }
         else _updR = new RectF();
 
+        if (!PopupAllowed && !_dev.Demo)
+        {
+            _popR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(BannerH));
+            var pr = _popR;
+            Shift(canvas, idx++, () => Banner(canvas, pr, "Заряд сразу при подключении", "Разрешите «Поверх других приложений»", _p.Accent, true));
+            y += Dp(BannerH + Gap);
+        }
+        else _popR = new RectF();
+
         if (_dev.MissingPermission || _dev.BluetoothOff || _dev.NoBluetooth)
         {
             y += Dp(28);
@@ -203,23 +217,6 @@ internal sealed class GlanceView : View
                 Shift(canvas, idx++, () => DrawCard(canvas, r, acc));
                 y += Dp(h + Gap);
             }
-        }
-
-        if (_dev.PhoneLevel is int pl)
-        {
-            y += Dp(28);
-            Section(canvas, "Этот телефон", y);
-            var r = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(CardH));
-            var phone = new Accessory("PHONE")
-            {
-                Name = Build.Model ?? "Телефон",
-                Profile = new DeviceProfile { Kind = DeviceKind.Phone, Brand = Build.Manufacturer ?? "" },
-                Connected = true,
-                SystemLevel = pl,
-                SystemCharging = _dev.PhoneCharging,
-            };
-            Shift(canvas, idx++, () => DrawCard(canvas, r, phone, phoneCard: true));
-            y += Dp(CardH + Gap);
         }
 
         y += Dp(28);
@@ -366,12 +363,15 @@ internal sealed class GlanceView : View
         if (a.HasParts)
         {
             float top = r.Top + Dp(80), cw = (r.Width() - Dp(32)) / 3f;
-            var parts = new[] { ("Левый", a.Left), ("Правый", a.Right), ("Кейс", a.Case) };
+            // case: live, remembered («Кейс · 2 ч»), or not reported yet («Откройте кейс»)
+            var age = _dev.CaseAge(a.Key);
+            string caseLabel = !a.Case.Known ? "Откройте кейс" : age is TimeSpan t ? $"Кейс · {Ago(t)}" : "Кейс";
+            var parts = new[] { ("Левый", a.Left), ("Правый", a.Right), (caseLabel, a.Case) };
             for (int i = 0; i < 3; i++)
             {
                 var (label, part) = parts[i];
                 float cx = r.Left + Dp(16) + cw * i + cw / 2;
-                MiniRing(c, cx, top + Dp(22), Dp(20), part, $"{a.Key}:{i}");
+                MiniRing(c, cx, top + Dp(22), Dp(20), part, $"{a.Key}:{i}", stale: i == 2 && age is not null);
                 TextCentered(c, label, cx, top + Dp(62), Dp(12), _p.Sub, false);
             }
         }
@@ -407,7 +407,9 @@ internal sealed class GlanceView : View
         }
     }
 
-    void MiniRing(Canvas c, float cx, float cy, float rad, Part part, string key)
+    static string Ago(TimeSpan t) => t.TotalMinutes < 60 ? $"{Math.Max(1, (int)t.TotalMinutes)} мин" : t.TotalHours < 48 ? $"{(int)t.TotalHours} ч" : $"{(int)t.TotalDays} дн";
+
+    void MiniRing(Canvas c, float cx, float cy, float rad, Part part, string key, bool stale = false)
     {
         var box = new RectF(cx - rad, cy - rad, cx + rad, cy + rad);
         using var p = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Dp(4.5f), StrokeCap = Paint.Cap.Round, Color = _p.Track };
@@ -416,7 +418,7 @@ internal sealed class GlanceView : View
         if (part.Level is int l)
         {
             float shown = Tween("P:" + key, l);
-            p.Color = Palette.Level(l, part.Charging);
+            p.Color = stale ? Palette.Alpha(Palette.Level(l, false), 120) : Palette.Level(l, part.Charging);
             c.DrawArc(box, -90, 360 * shown / 100f, false, p);
             TextCentered(c, $"{(int)MathF.Round(shown)}", cx, cy + Dp(5), Dp(14), _p.Text, true);
             if (part.Charging) Icons.Bolt(c, new RectF(cx + rad - Dp(4), cy - rad - Dp(6), cx + rad + Dp(10), cy - rad + Dp(8)), Palette.Green);
@@ -633,6 +635,7 @@ internal sealed class GlanceView : View
                 if (Math.Abs(x - _downX) > Dp(10) || Math.Abs(y - _downY) > Dp(10)) return true;
                 if (_permR.Contains(x, y)) PermissionRequested?.Invoke();
                 else if (_updR.Contains(x, y)) UpdateRequested?.Invoke();
+                else if (_popR.Contains(x, y)) PopupPermissionRequested?.Invoke();
                 else if (_heroR.Contains(x, y)) Slosh(0.9f);
                 else if (_shadeR.Contains(x, y))
                 {

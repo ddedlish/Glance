@@ -78,6 +78,23 @@ bottom dark-demo-bottom
 step dark-demo-update yes --ez demo true --es fakeupdate 9.9.9
 step light-demo no --ez demo true
 shade light-shade
+popup() { # name — the glass card that slides up over any app the moment earbuds connect
+  local name="$1"
+  adb shell appops set $PKG SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1
+  adb shell cmd uimode night yes >/dev/null 2>&1
+  adb shell am force-stop $PKG
+  adb logcat -c
+  adb shell am start -n "$ACT" --ez demo true --ez popup true >/dev/null 2>&1
+  sleep 1.3
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2.2
+  N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$name")"
+  if adb logcat -d -s Glance:I | grep -q "popup:"; then note "$name: окно при подключении показано"
+  else fail "$name: окно при подключении не появилось"; adb logcat -d | grep -iE "glance|overlay" | tail -20 >> "$REPORT"; fi
+  if adb logcat -d | grep -E "FATAL EXCEPTION" >/dev/null; then fail "$name: падение"; adb logcat -d | grep -A30 "FATAL EXCEPTION" | head -60 >> "$REPORT"; fi
+}
+
+popup dark-popup
 step dark-real yes
 step light-real no
 adb logcat -d > "$OUT/logcat.txt" 2>/dev/null

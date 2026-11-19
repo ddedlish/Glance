@@ -10,7 +10,7 @@ namespace Glance.Droid;
 
 /// <summary>
 /// «Glance в шторке»: a quiet always-on notification with every connected accessory (per-bud levels too) and
-/// the phone. Its status-bar icon is a live ring with the weakest level as a number, like the tray icon on Windows.
+/// a popup the moment one connects. Its status-bar icon is a live ring with the weakest level as a number, like the tray icon on Windows.
 /// A foreground service of type connectedDevice keeps the Bluetooth listeners alive while the app is closed.
 /// </summary>
 [Service(Name = "io.github.ddedlish.glance.GlanceService", Exported = false, ForegroundServiceType = ForegroundService.TypeConnectedDevice)]
@@ -37,7 +37,7 @@ public sealed class GlanceService : Service
     }
 
     /// <summary>Starts the shade notification when it is switched on and Android allows it (Bluetooth permission).</summary>
-    public static void Start(Context c, bool demo)
+    public static void Start(Context c, bool demo, bool popup = false)
     {
         if (!Enabled(c)) return;
         // Android 14 lets a connectedDevice service start only with the Bluetooth permission granted.
@@ -46,6 +46,7 @@ public sealed class GlanceService : Service
         {
             var i = new Intent(c, typeof(GlanceService));
             i.PutExtra("demo", demo);
+            i.PutExtra("popup", popup);
             c.StartForegroundService(i);
         }
         catch (Exception e) { Log.Error("Android shade start", e); }
@@ -72,12 +73,17 @@ public sealed class GlanceService : Service
         if (_dev is null || _dev.Demo != demo)
         {
             _dev?.Stop();
+            _known = null; // the first snapshot is not «just connected»
             _dev = new Devices(this) { Background = true };
-            _dev.Changed += Schedule;
+            _dev.Changed += OnChanged;
             if (demo) _dev.UseDemo(); else _dev.Start();
         }
         else _dev.Refresh();
         Publish();
+        Watch();
+        // self-test: show the connect popup for the demo earbuds
+        if (demo && intent?.GetBooleanExtra("popup", false) == true)
+            _main.PostDelayed(() => { if (_dev?.Connected.FirstOrDefault(a => a.HasParts) is { } b) Announce(b, force: true); }, 900);
         return StartCommandResult.Sticky;
     }
 
@@ -106,6 +112,62 @@ public sealed class GlanceService : Service
         }
         catch (Exception e) { Log.Error("Android shade foreground", e); return false; }
     }
+
+    // ───────── «just connected»: popup over any app, live ─────────
+
+    HashSet<string>? _known;
+
+    void OnChanged()
+    {
+        Watch();
+        ConnectPopup.Refresh(); // the card on screen follows the levels live, without the 400 ms coalescing
+        Schedule();
+    }
+
+    /// <summary>Finds accessories that have just connected and announces them at once.</summary>
+    void Watch()
+    {
+        if (_dev is null) return;
+        var now = _dev.Connected.Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
+        if (_known is null) { _known = now; return; }
+        foreach (var a in _dev.Connected)
+            if (!_known.Contains(a.Key)) Announce(a);
+        _known = now;
+    }
+
+    void Announce(Accessory a, bool force = false)
+    {
+        if (!force && MainActivity.Visible) return; // the app itself is on screen
+        if (ConnectPopup.Show(this, a)) return;
+        // no «Поверх других приложений»: a heads-up notification that peeks for a few seconds instead
+        try
+        {
+            var nm = GetSystemService(NotificationService) as NotificationManager;
+            if (nm is null) return;
+            if (nm.GetNotificationChannel(ConnectChannel) is null)
+            {
+                var ch = new NotificationChannel(ConnectChannel, "Подключение аксессуара", NotificationImportance.High) { Description = "Заряд сразу при подключении" };
+                ch.EnableVibration(false);
+                ch.SetSound(null, null);
+                nm.CreateNotificationChannel(ch);
+            }
+            var open = new Intent(this, typeof(MainActivity));
+            open.AddFlags(ActivityFlags.NewTask | ActivityFlags.SingleTop);
+            var n = new Notification.Builder(this, ConnectChannel)
+                .SetSmallIcon(StatusIcon(a.WeakestLevel, a.Charging))!
+                .SetContentTitle($"{a.DisplayName} — подключено")!
+                .SetContentText(Line(a))!
+                .SetAutoCancel(true)!
+                .SetTimeoutAfter(8000)!
+                .SetCategory(Notification.CategoryStatus)!
+                .SetContentIntent(PendingIntent.GetActivity(this, 2, open, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent))!
+                .Build();
+            nm.Notify(2, n);
+        }
+        catch (Exception e) { Log.Error("Android connect notice", e); }
+    }
+
+    const string ConnectChannel = "glance-connect";
 
     /// <summary>Adverts can arrive many times a second: coalesce into one update.</summary>
     void Schedule()
@@ -145,15 +207,13 @@ public sealed class GlanceService : Service
     {
         var list = _dev?.Connected.Where(a => a.Level is not null || a.HasParts).ToList() ?? new List<Accessory>();
         var all = _dev?.Connected ?? (IReadOnlyList<Accessory>)Array.Empty<Accessory>();
-        int? phone = _dev?.PhoneLevel;
-        bool phoneCharging = _dev?.PhoneCharging ?? false;
 
         var weakest = list.Where(a => !a.Charging).MinBy(a => a.WeakestLevel) ?? list.MinBy(a => a.WeakestLevel);
         string title, text;
         if (all.Count == 0)
         {
             title = "Нет подключённых аксессуаров";
-            text = phone is int p0 ? $"Телефон {p0}%{(phoneCharging ? " ⚡" : "")}" : "Подключите наушники, часы или геймпад";
+            text = "Подключите наушники, часы или геймпад";
         }
         else
         {
@@ -161,17 +221,15 @@ public sealed class GlanceService : Service
             text = weakest is { WeakestLevel: int wl } w
                 ? (w.Charging ? $"{w.DisplayName} заряжается" : wl <= 20 ? $"{w.DisplayName}: пора зарядить" : $"Первым разрядится {w.DisplayName}")
                 : "Подключено, заряд не передаётся";
-            if (phone is int p1) text += $" · телефон {p1}%";
         }
 
         var inbox = new Notification.InboxStyle();
         foreach (var a in all) inbox.AddLine(Line(a));
-        if (phone is int p2) inbox.AddLine($"Телефон — {p2}%{(phoneCharging ? " ⚡" : "")}");
         inbox.SetBigContentTitle(all.Count == 0 ? title : $"Аксессуары: {all.Count}");
 
         int? iconLevel = weakest?.WeakestLevel;
         bool iconCharging = weakest?.Charging ?? false;
-        key = $"{title}\n{text}\n{string.Join("|", all.Select(Line))}\n{phone}{phoneCharging}\n{iconLevel}{iconCharging}";
+        key = $"{title}\n{text}\n{string.Join("|", all.Select(Line))}\n{iconLevel}{iconCharging}";
 
         var open = new Intent(this, typeof(MainActivity));
         open.AddFlags(ActivityFlags.NewTask | ActivityFlags.SingleTop);

@@ -16,6 +16,9 @@ namespace Glance.Droid;
 public sealed class MainActivity : Activity
 {
     Devices? _dev;
+
+    /// <summary>True while the screen is in front: the service then skips the connect popup.</summary>
+    public static bool Visible { get; private set; }
     GlanceView? _view;
     Backdrop? _back;
     const string Prefs = "glance";
@@ -42,6 +45,16 @@ public sealed class MainActivity : Activity
         _view.PermissionRequested += AskPermissions;
         _view.UpdateRequested += OpenUpdate;
         _view.ShadeOn = GlanceService.Enabled(this);
+        _view.PopupAllowed = ConnectPopup.Allowed(this);
+        _view.PopupPermissionRequested += () =>
+        {
+            try
+            {
+                var i = new Intent(Android.Provider.Settings.ActionManageOverlayPermission, Android.Net.Uri.Parse("package:" + PackageName));
+                StartActivity(i);
+            }
+            catch (Exception e) { Log.Error("Android overlay settings", e); }
+        };
         _view.ShadeToggled += on =>
         {
             GlanceService.SetEnabled(this, on);
@@ -63,15 +76,17 @@ public sealed class MainActivity : Activity
     protected override void OnResume()
     {
         base.OnResume();
+        Visible = true;
         _dev?.Start();
         _view?.Replay();
-        if (_dev is not null) GlanceService.Start(this, _dev.Demo);
-        if (_view is not null) { _view.ShadeOn = GlanceService.Enabled(this); _view.Invalidate(); }
+        if (_dev is not null) GlanceService.Start(this, _dev.Demo, Intent?.GetBooleanExtra("popup", false) == true);
+        if (_view is not null) { _view.ShadeOn = GlanceService.Enabled(this); _view.PopupAllowed = ConnectPopup.Allowed(this); _view.RequestLayout(); _view.Invalidate(); }
         _ = CheckUpdatesAsync();
     }
 
     protected override void OnPause()
     {
+        Visible = false;
         _dev?.Stop();
         base.OnPause();
     }
