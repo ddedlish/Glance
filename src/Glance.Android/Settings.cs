@@ -435,7 +435,7 @@ internal sealed class SettingsView : GlassView
                 c.DrawLine(cx - Dp(7), cy - Dp(9), cx + Dp(13), cy + Dp(9), wp);
             }
         });
-        DrawSwitch(c, r, tile, "Звуки", SoundsOn ? "Подключение, отключение и заряд" : "Выключено", SoundsOn, _soundT0);
+        DrawSwitch(c, r, tile, "Звуки", SoundsOn ? "Подключение и заряд" : "Выключено", SoundsOn, _soundT0);
         if (Now - _soundT0 < 1300) PostInvalidateOnAnimation();
     }
 
@@ -454,8 +454,8 @@ internal sealed class SettingsView : GlassView
             c.DrawRoundRect(new RectF(cx - Dp(5.5f), cy + Dp(3), cx + Dp(5.5f), cy + Dp(9)), Dp(1.5f), Dp(1.5f), p);
         });
         float tx = tile.Right + Dp(14);
-        Text(c, "Заряд сразу при подключении", tx, r.Top + Dp(32), Dp(16), _p.Text, bold: true, maxW: r.Right - tx - Dp(44));
-        Text(c, PopupAllowed ? "Карточка поверх приложений · включено" : "Разрешите «Поверх других приложений»", tx, r.Top + Dp(52), Dp(12.5f),
+        Text(c, "Заряд сразу", tx, r.Top + Dp(32), Dp(16), _p.Text, bold: true, maxW: r.Right - tx - Dp(44));
+        Text(c, PopupAllowed ? "Включено" : "Нужно разрешение", tx, r.Top + Dp(52), Dp(12.5f),
             PopupAllowed ? _p.Sub : Palette.Amber, maxW: r.Right - tx - Dp(44));
         if (PopupAllowed)
         {
@@ -509,7 +509,7 @@ internal sealed class SettingsView : GlassView
 
         using (var div = new Paint { Color = _p.CardBorder, StrokeWidth = Math.Max(1, Dp(0.8f)) })
             c.DrawLine(r.Left + Dp(18), r.Bottom - Dp(52), r.Right - Dp(18), r.Bottom - Dp(52), div);
-        Text(c, "Исходный код и выпуски на GitHub", r.Left + Dp(18), r.Bottom - Dp(20), Dp(15), _p.Accent, bold: true, maxW: r.Width() - Dp(60));
+        Text(c, "Исходный код на GitHub", r.Left + Dp(18), r.Bottom - Dp(20), Dp(15), _p.Accent, bold: true, maxW: r.Width() - Dp(60));
         Chevron(c, r.Right - Dp(24), r.Bottom - Dp(26), _p.Sub);
     }
 
