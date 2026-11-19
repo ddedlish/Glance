@@ -69,6 +69,8 @@ public sealed class MainActivity : Activity
         _settings.BackRequested += () => ShowSettings(false);
         _settings.PopupRequested += OpenOverlaySettings;
         _settings.SourceRequested += () => OpenUrl("https://github.com/ddedlish/Glance");
+        _settings.AuthorRequested += () => OpenUrl("https://steamcommunity.com/id/ddedlish/");
+        _settings.DonateRequested += () => OpenUrl("https://boosty.to/ddedlish");
         _settings.SoundsToggled += on =>
         {
             Sounds.SetEnabled(this, on);
@@ -115,7 +117,7 @@ public sealed class MainActivity : Activity
             _view.Update = new UpdateInfo(fv, Intent?.GetStringExtra("fakeurl") ?? "https://github.com/ddedlish/Glance-Releases/releases", "");
             // self-test: the banner mid-download (frozen, no network)
             float fp = Intent?.GetFloatExtra("fakeprogress", -1) ?? -1;
-            if (fp >= 0) Updater.Demo(_view.Update, fp);
+            if (fp >= 0) Updater.Demo(_view.Update, fp, Intent?.GetStringExtra("fakestage") == "installing" ? UpdateStage.Installing : UpdateStage.Downloading);
             else if (Intent?.GetStringExtra("fakeurl") is not null) Updater.Go(this, _view.Update); // a real download and check
         }
         ApplyTheme();
@@ -159,8 +161,8 @@ public sealed class MainActivity : Activity
     void OnUpdaterChanged()
     {
         if (_view is null) return;
-        if (_view.Update is null && Updater.Target is { } t) { _view.Update = t; _view.RequestLayout(); }
-        _view.Invalidate();
+        if (_view.Update is null && Updater.Target is { } t) _view.Update = t;
+        _view.Invalidate(); // the banner re-measures itself when it grows its water line
     }
 
     /// <summary>Tapped «Доступна версия X» / «скачан» in the shade: carry on with the download or the install.</summary>
@@ -346,6 +348,7 @@ public sealed class MainActivity : Activity
             _view.Update = u;
             _view.RequestLayout();
             _view.Invalidate();
+            Updater.Prefetch(u); // on Wi-Fi the APK is ready before the banner is even tapped
         });
     }
 

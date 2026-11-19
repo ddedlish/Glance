@@ -69,6 +69,7 @@ internal sealed class Devices
             catch (Exception e) { Log.Error("Android receiver", e); }
         }
         Refresh();
+        if (_scan is null) _burstUntil = DateTime.UtcNow.AddSeconds(30); // the first half-minute listens at full speed
         StartScan();
     }
 
@@ -85,6 +86,7 @@ internal sealed class Devices
     void OnBroadcast(Intent i)
     {
         if (i.Action == Intent.ActionBatteryChanged) return; // the phone's own battery is not shown
+        if (i.Action == BluetoothDevice.ActionAclConnected) Burst(); // earbuds just out of the case: catch the case level at once
         // The battery report and connection changes arrive a moment before the hidden getters update.
         Refresh();
         _main.PostDelayed(Refresh, 1500);
@@ -190,9 +192,14 @@ internal sealed class Devices
     public TimeSpan? CaseAge(string key) =>
         _caseAt.TryGetValue(key, out var at) && DateTime.UtcNow - at > TimeSpan.FromSeconds(90) ? DateTime.UtcNow - at : null;
 
+    readonly Dictionary<string, (int Level, DateTime At)> _caseSaved = new(StringComparer.Ordinal);
+
     void SaveCase(string key, int level)
     {
         _caseAt[key] = DateTime.UtcNow;
+        // adverts arrive several times a second: write to disk only when the level changes or once a minute
+        if (_caseSaved.TryGetValue(key, out var last) && last.Level == level && DateTime.UtcNow - last.At < TimeSpan.FromMinutes(1)) return;
+        _caseSaved[key] = (level, DateTime.UtcNow);
         try
         {
             _ctx.GetSharedPreferences("glance", FileCreationMode.Private)?.Edit()
@@ -227,7 +234,8 @@ internal sealed class Devices
             _scanner = adapter.BluetoothLeScanner;
             if (_scanner is null) return;
             _scan = new BudsScan(r => _main.Post(() => OnAdvert(r)));
-            var settings = new ScanSettings.Builder().SetScanMode(Background ? Android.Bluetooth.LE.ScanMode.Balanced : Android.Bluetooth.LE.ScanMode.LowLatency)!.Build();
+            bool slow = Background && DateTime.UtcNow >= _burstUntil;
+            var settings = new ScanSettings.Builder().SetScanMode(slow ? Android.Bluetooth.LE.ScanMode.Balanced : Android.Bluetooth.LE.ScanMode.LowLatency)!.Build();
             // Filtered scan: Android keeps it running with the screen off (unfiltered scans are paused then),
             // and only earbud adverts wake the app.
             var filters = new List<ScanFilter>
@@ -238,6 +246,79 @@ internal sealed class Devices
             _scanner.StartScan(filters, settings, _scan);
         }
         catch (Exception e) { Log.Error("Android BLE scan", e); _scan = null; }
+    }
+
+    DateTime _burstUntil;
+
+    /// <summary>
+    /// In the background the scan is «balanced» (adverts every few seconds). Right after an accessory connects the
+    /// case is still open and reports its charge — listen at full speed for a minute so it shows within a second.
+    /// </summary>
+    void Burst()
+    {
+        if (Demo || !Background) return;
+        bool wasSlow = DateTime.UtcNow >= _burstUntil;
+        _burstUntil = DateTime.UtcNow.AddSeconds(60);
+        if (wasSlow && _scan is not null) { StopScan(); StartScan(); }
+        _main.PostDelayed(() =>
+        {
+            if (_scan is not null && DateTime.UtcNow >= _burstUntil) { StopScan(); StartScan(); } // back to balanced
+        }, 61_000);
+    }
+
+    // ───────── steady levels: one stray advert must not make a bud jump 100 → 97 → 100 ─────────
+
+    /// <summary>
+    /// Earbuds send several adverts a second, and not all of them are fresh: the case (in a pocket nearby) keeps
+    /// advertising the levels it saw when the buds left it — «100 %» long after the bud in the ear is at 97 %.
+    /// A bud that is not charging can only lose charge, so:
+    /// • a lower value is shown once it has come twice among the last adverts (one corrupt packet is ignored);
+    /// • a higher value while not charging is a stale packet — shown only if nothing lower came for a while;
+    /// • on the charger the same holds the other way round; other changes need a majority.
+    /// The very first value is shown at once.
+    /// </summary>
+    sealed class PartFilter
+    {
+        readonly Queue<(Part P, DateTime At)> _q = new();
+        public Part Shown = Part.Unknown;
+
+        public Part Feed(Part p)
+        {
+            var now = DateTime.UtcNow;
+            _q.Enqueue((p, now));
+            while (_q.Count > 8 || (_q.Count > 0 && now - _q.Peek().At > TimeSpan.FromSeconds(30))) _q.Dequeue();
+            if (p == Shown) return Shown;
+            if (!Shown.Known && p.Known) return Shown = p;
+
+            int mine = 0, cur = 0, lower = 0, higher = 0;
+            foreach (var (x, _) in _q)
+            {
+                if (x == p) mine++; else if (x == Shown) cur++;
+                if (x.Known && p.Known)
+                {
+                    if (x.Level < p.Level) lower++;
+                    else if (x.Level > p.Level) higher++;
+                }
+            }
+            if (p.Known && Shown.Known && p.Charging == Shown.Charging)
+            {
+                bool natural = p.Charging ? p.Level > Shown.Level : p.Level < Shown.Level;
+                if (natural) { if (mine >= 2) Shown = p; }
+                // against the natural direction: a stale packet unless the whole window agrees
+                else if (_q.Count >= 6 && (p.Charging ? higher : lower) == 0 && mine >= 4) Shown = p;
+                return Shown;
+            }
+            if (mine >= 2 && mine > cur) Shown = p; // charging started / stopped, bud taken out or put away
+            return Shown;
+        }
+    }
+
+    readonly Dictionary<string, PartFilter> _filters = new(StringComparer.Ordinal);
+
+    Part Steady(string key, Part p)
+    {
+        if (!_filters.TryGetValue(key, out var f)) _filters[key] = f = new PartFilter();
+        return f.Feed(p);
     }
 
     void StopScan()
@@ -273,11 +354,13 @@ internal sealed class Devices
         // «unknown» once the buds are in the ears). Remember the last real value — across restarts — and show it
         // marked with its age, like iOS does.
         Part caseNow;
-        if (ad.Case.Known) { caseNow = ad.Case; SaveCase(target.Key, ad.Case.Level!.Value); }
-        else caseNow = LastCase(target.Key) is { } lc ? new Part(lc.Level, false) : Part.Unknown;
-        bool changed = target.Left != ad.Left || target.Right != ad.Right || target.Case != caseNow;
-        target.Left = ad.Left;
-        target.Right = ad.Right;
+        if (ad.Case.Known) { caseNow = Steady(target.Key + ":C", ad.Case); SaveCase(target.Key, caseNow.Level ?? ad.Case.Level!.Value); }
+        else caseNow = target.Case.Known ? target.Case with { Charging = false } : LastCase(target.Key) is { } lc ? new Part(lc.Level, false) : Part.Unknown;
+        var left = Steady(target.Key + ":L", ad.Left);
+        var right = Steady(target.Key + ":R", ad.Right);
+        bool changed = target.Left != left || target.Right != right || target.Case != caseNow;
+        target.Left = left;
+        target.Right = right;
         target.Case = caseNow;
         target.PartsAtUtc = DateTime.UtcNow;
         target.PartsSource = ad.Vendor == BudsSource.AppleContinuity ? "Apple" : "Fast Pair";

@@ -77,6 +77,7 @@ shade dark-shade
 bottom dark-demo-bottom
 step dark-demo-update yes --ez demo true --es fakeupdate 9.9.9
 step dark-demo-download yes --ez demo true --es fakeupdate 9.9.9 --ef fakeprogress 0.42
+step light-demo-installing no --ez demo true --es fakeupdate 9.9.9 --ef fakeprogress 0.7 --es fakestage installing
 download() { # name — a real in-app download of the previous release APK: downloaded, checked, refused as not newer
   local name="$1"
   if [ -z "$PREV" ]; then note "$name: предыдущей версии нет, пропуск"; return; fi

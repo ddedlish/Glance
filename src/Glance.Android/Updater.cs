@@ -36,6 +36,9 @@ internal static class Updater
     public static event Action? Changed;
 
     public static float Progress => Total > 0 ? Math.Clamp(Done / (float)Total, 0, 1) : 0;
+
+    /// <summary>0…1 while installing: copying into the installer session, then Android's own work.</summary>
+    public static float InstallProgress { get; private set; }
     public static bool Busy => Stage is UpdateStage.Downloading or UpdateStage.Installing;
 
     static void Set(UpdateStage s, string? error = null)
@@ -47,12 +50,13 @@ internal static class Updater
     }
 
     /// <summary>Self-test: a frozen «downloading» banner without network.</summary>
-    public static void Demo(UpdateInfo u, float progress)
+    public static void Demo(UpdateInfo u, float progress, UpdateStage stage = UpdateStage.Downloading)
     {
         Target = u;
         Total = u.Size > 0 ? u.Size : 12_176_034;
         Done = (long)(Total * progress);
-        Set(UpdateStage.Downloading);
+        InstallProgress = progress;
+        Set(stage);
     }
 
     /// <summary>One tap on the banner or the notification: download → check → install, continuing from where it is.</summary>
@@ -73,6 +77,23 @@ internal static class Updater
                 Start(u, installAfter: a);
                 return;
         }
+    }
+
+    /// <summary>
+    /// Found a newer version: on Wi-Fi (unmetered) download it right away in the background, so the tap on the
+    /// banner or the notification goes straight to installing.
+    /// </summary>
+    public static void Prefetch(UpdateInfo u)
+    {
+        if (Stage != UpdateStage.Idle || (Target is not null && Target.Version == u.Version && _file is not null)) return;
+        try
+        {
+            if (App.GetSystemService(Context.ConnectivityService) is not Android.Net.ConnectivityManager cm || cm.IsActiveNetworkMetered) return;
+        }
+        catch { return; }
+        Android.Util.Log.Info("Glance", $"update: prefetch {Fmt.Ver(u.Version)}");
+        Target = u;
+        Start(u, null);
     }
 
     static void Reset()
@@ -196,6 +217,7 @@ internal static class Updater
             catch (Exception e) { Log.Error("Android unknown sources", e); }
             return;
         }
+        InstallProgress = 0;
         Set(UpdateStage.Installing);
         string file = _file;
         _ = Task.Run(() =>
@@ -207,14 +229,30 @@ internal static class Updater
                 p.SetAppPackageName(App.PackageName);
                 long len = new FileInfo(file).Length;
                 p.SetSize(len);
+                // Android 12+: when Glance installed the current version itself, the update goes in without the extra
+                // «Обновить?» dialog (USER_ACTION_NOT_REQUIRED = 2); called by reflection to stay safe on every binding
+                if (OperatingSystem.IsAndroidVersionAtLeast(31))
+                    try { p.Class.GetMethod("setRequireUserAction", Java.Lang.Integer.Type)?.Invoke(p, Java.Lang.Integer.ValueOf(2)); }
+                    catch (Exception e) { Android.Util.Log.Info("Glance", "update: setRequireUserAction " + e.Message); }
                 int id = installer.CreateSession(p);
                 using var session = installer.OpenSession(id);
                 using (var src = File.OpenRead(file))
                 using (var dst = session.OpenWrite("glance.apk", 0, len)!)
                 {
-                    src.CopyTo(dst);
+                    var buf = new byte[256 * 1024];
+                    long copied = 0;
+                    int n;
+                    while ((n = src.Read(buf, 0, buf.Length)) > 0)
+                    {
+                        dst.Write(buf, 0, n);
+                        copied += n;
+                        InstallProgress = 0.85f * copied / Math.Max(1, len); // the last 15 % is Android's own check
+                        Tick();
+                    }
                     session.Fsync(dst);
                 }
+                InstallProgress = 0.9f;
+                Tick();
                 var back = new Intent(App, typeof(InstallReceiver));
                 back.SetAction(ActionStatus);
                 // Mutable: PackageInstaller fills in the status and the confirmation intent
@@ -255,6 +293,7 @@ internal static class Updater
                 }
                 break;
             case 0: // STATUS_SUCCESS: the new version replaces this process
+                InstallProgress = 1;
                 Set(UpdateStage.Idle);
                 break;
             case 3: // STATUS_FAILURE_ABORTED: the user said «Отмена»

@@ -80,7 +80,7 @@ internal sealed class GlanceView : GlassView
     float ContentHeight(IReadOnlyList<Accessory> list)
     {
         float y = TopInset / _d + 96;
-        if (Update is not null) y += BannerH + Gap;
+        if (Update is not null) y += (_updHMeasured = UpdH()) + Gap;
         if (!PopupAllowed && !_dev.Demo) y += BannerH + Gap;
         if (_dev.MissingPermission || _dev.BluetoothOff || _dev.NoBluetooth) y += BannerH + 28 + Gap;
         if (Hero(list) is not null) y += HeroH + Gap + 28;
@@ -138,10 +138,12 @@ internal sealed class GlanceView : GlassView
 
         if (Update is { } up)
         {
-            _updR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(BannerH));
+            float uh = UpdH();
+            if (uh != _updHMeasured) RequestLayout(); // the banner grew or shrank its water line
+            _updR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(uh));
             var ur = _updR;
             Shift(canvas, idx++, () => DrawUpdate(canvas, ur, up));
-            y += Dp(BannerH + Gap);
+            y += Dp(uh + Gap);
         }
         else _updR = new RectF();
 
@@ -231,84 +233,156 @@ internal sealed class GlanceView : GlassView
         if (k < 1) PostInvalidateOnAnimation();
     }
 
-    float _updShown; // the liquid in the banner flows to the real progress instead of jumping
+    float _updShown, _updHMeasured; // the water flows to the real progress instead of jumping
+    long _updDoneT0;
+
+    UpdateStage UpdStage => Update is { } u && Updater.Target?.Version == u.Version ? Updater.Stage : UpdateStage.Idle;
+
+    /// <summary>The update banner is taller while its water line is shown (downloading, downloaded, installing).</summary>
+    float UpdH() => UpdStage is UpdateStage.Downloading or UpdateStage.Installing or UpdateStage.Ready ? BannerH + 16 : BannerH;
 
     /// <summary>
-    /// The update banner follows the download: liquid fills the glass from the left with a rippling edge and a sheen
-    /// running through it, then «Установить»; Android's own confirmation follows the tap.
+    /// The update banner follows the whole way: a glass tube under the text fills with green water — a rippling
+    /// surface, a sloshing front, bubbles and a light running through it — while the APK downloads and while
+    /// Android installs it; when it is full the banner says «Нажмите, чтобы установить».
     /// </summary>
     void DrawUpdate(Canvas c, RectF r, UpdateInfo up)
     {
         string v = Fmt.Ver(up.Version);
-        var st = Updater.Target?.Version == up.Version ? Updater.Stage : UpdateStage.Idle;
+        var st = UpdStage;
         (string title, string sub, AColor tint) = st switch
         {
             UpdateStage.Downloading => ($"Скачивается версия {v}", Updater.Total > 0
-                ? $"{Updater.Mb(Updater.Done)} из {Updater.Mb(Updater.Total)} МБ · {(int)(Updater.Progress * 100)}%" : $"{Updater.Mb(Updater.Done)} МБ", _p.Accent),
+                ? $"{Updater.Mb(Updater.Done)} из {Updater.Mb(Updater.Total)} МБ · {(int)(Updater.Progress * 100)}%" : $"{Updater.Mb(Updater.Done)} МБ", Palette.Green),
             UpdateStage.Ready => ($"Версия {v} скачана", "Нажмите, чтобы установить", Palette.Green),
-            UpdateStage.Installing => ($"Устанавливается {v}", "Подтвердите обновление", Palette.Green),
+            UpdateStage.Installing => ($"Устанавливается {v}", $"{(int)(_updShown * 100)}% · Glance перезапустится сам", Palette.Green),
             UpdateStage.NeedPermission => ("Разрешите установку", "Glance → «Разрешить из этого источника»", Palette.Amber),
             UpdateStage.Failed => ("Обновление не скачалось", Updater.Error.Length > 0 ? Updater.Error : "Нажмите, чтобы повторить", Palette.Red),
             _ => ($"Доступна версия {v}", "Нажмите, чтобы скачать и установить", _p.Accent),
         };
-        if (st != UpdateStage.Downloading)
+        if (st is not (UpdateStage.Downloading or UpdateStage.Installing or UpdateStage.Ready))
         {
-            _updShown = st is UpdateStage.Ready or UpdateStage.Installing ? 1 : 0;
-            Banner(c, r, title, sub, tint, st != UpdateStage.Installing);
-            if (st == UpdateStage.Installing) PostInvalidateOnAnimation();
+            _updShown = 0;
+            Banner(c, r, title, sub, tint, true);
             return;
         }
 
-        float target = Updater.Progress;
-        _updShown += (target - _updShown) * 0.18f;
-        if (Math.Abs(target - _updShown) < 0.002f) _updShown = target;
-        float t = Now / 1000f;
+        // installing: the copy into the installer drives the water, then it keeps creeping up while Android checks
+        float target = st switch
+        {
+            UpdateStage.Downloading => Updater.Progress,
+            UpdateStage.Installing => Math.Max(Updater.InstallProgress, Math.Min(0.97f, _updShown + 0.0015f)),
+            _ => 1,
+        };
+        if (st == UpdateStage.Ready && _updShown < 1 && _updDoneT0 == 0) _updDoneT0 = Now;
+        if (st != UpdateStage.Ready) _updDoneT0 = 0;
+        _updShown += (target - _updShown) * 0.12f;
+        if (Math.Abs(target - _updShown) < 0.001f) _updShown = target;
+
         Glass(c, r, Dp(20));
+        using (var p = new Paint(PaintFlags.AntiAlias) { Color = Palette.Alpha(tint, _p.Dark ? 30 : 24) })
+            c.DrawRoundRect(r, Dp(20), Dp(20), p);
+        float t = Now / 1000f;
+        float pulse = st == UpdateStage.Ready ? 0 : 0.5f + 0.5f * MathF.Sin(t * 6f);
+        using (var halo = new Paint(PaintFlags.AntiAlias) { Color = Palette.Alpha(tint, (int)(80 * pulse)) })
+            c.DrawCircle(r.Left + Dp(24), r.Top + Dp(32), Dp(5 + 4 * pulse), halo);
+        using (var dot = new Paint(PaintFlags.AntiAlias) { Color = tint })
+            c.DrawCircle(r.Left + Dp(24), r.Top + Dp(32), Dp(5), dot);
+        Text(c, title, r.Left + Dp(42), r.Top + Dp(27), Dp(15.5f), _p.Text, bold: true, maxW: r.Width() - Dp(66));
+        Text(c, sub, r.Left + Dp(42), r.Top + Dp(47), Dp(12.5f), _p.Sub, maxW: r.Width() - Dp(66));
+        if (st == UpdateStage.Ready) Chevron(c, r.Right - Dp(24), r.Top + Dp(32), _p.Sub);
+
+        var tube = new RectF(r.Left + Dp(18), r.Bottom - Dp(22), r.Right - Dp(18), r.Bottom - Dp(10));
+        WaterLine(c, tube, _updShown, t, st == UpdateStage.Ready ? Math.Clamp((Now - _updDoneT0) / 900f, 0, 1) : -1);
+        // still once the water has settled in a downloaded banner; alive while anything is moving
+        if (st != UpdateStage.Ready || Now - _updDoneT0 < 4000) PostInvalidateOnAnimation();
+    }
+
+    /// <summary>
+    /// A glass tube with green water: the surface ripples, the front edge sloshes, bubbles drift towards the front,
+    /// a soft light runs along it and the front glows. done ≥ 0: the tube is full — a bright wave sweeps once.
+    /// </summary>
+    void WaterLine(Canvas c, RectF tube, float level, float t, float done)
+    {
+        float rad = tube.Height() / 2;
+        using (var track = new Paint(PaintFlags.AntiAlias) { Color = _p.Track })
+            c.DrawRoundRect(tube, rad, rad, track);
         c.Save();
         using (var clip = new Path())
         {
-            clip.AddRoundRect(r, Dp(20), Dp(20), Path.Direction.Cw!);
+            clip.AddRoundRect(tube, rad, rad, Path.Direction.Cw!);
             c.ClipPath(clip);
         }
-        // liquid with a rippling front edge
-        float edge = r.Left + r.Width() * _updShown;
-        using (var liquid = new Path())
+        float front = tube.Left + tube.Width() * Math.Clamp(level, 0, 1);
+        float slosh = Math.Min(1, level * 12) * (1 - Math.Clamp(level - 0.97f, 0, 0.03f) / 0.03f);
+        var green = Palette.Green;
+        var deep = Palette.Mix(green, AColor.Argb(255, 0, 120, 90), 0.45f);
+        var light = Palette.Mix(green, AColor.White, 0.35f);
+        using (var water = new Path())
         {
-            liquid.MoveTo(r.Left, r.Top);
-            liquid.LineTo(edge, r.Top);
-            for (float yy = r.Top; yy <= r.Bottom + 1; yy += Dp(4))
+            // the surface: a gentle wave travelling towards the front
+            float surface = tube.Top + tube.Height() * 0.28f;
+            water.MoveTo(tube.Left - 2, tube.Bottom + 2);
+            for (float x = tube.Left - 2; x <= front; x += Dp(3))
+                water.LineTo(x, surface + Dp(1.3f) * MathF.Sin(x / Dp(9) - t * 7f) + Dp(0.6f) * MathF.Sin(x / Dp(4) + t * 11f));
+            // the front: a rounded bulge that wobbles like a drop
+            float bulge = Dp(5) + Dp(2.5f) * MathF.Sin(t * 9f) * slosh;
+            water.CubicTo(front + bulge, surface, front + bulge, tube.Bottom, front, tube.Bottom + 2);
+            water.Close();
+            using var wp = new Paint(PaintFlags.AntiAlias);
+            wp.SetShader(new LinearGradient(0, tube.Top, 0, tube.Bottom, light, deep, Shader.TileMode.Clamp!));
+            c.DrawPath(water, wp);
+
+            c.Save();
+            c.ClipPath(water);
+            // colour shimmer drifting through the water
+            using (var sh = new Paint(PaintFlags.AntiAlias))
             {
-                float k = (yy - r.Top) / r.Height();
-                liquid.LineTo(edge + Dp(4) * MathF.Sin(k * 2 * MathF.PI * 1.3f + t * 5f) * Math.Min(1, _updShown * 8), yy);
-            }
-            liquid.LineTo(r.Left, r.Bottom);
-            liquid.Close();
-            using var lp = new Paint(PaintFlags.AntiAlias);
-            lp.SetShader(new LinearGradient(r.Left, 0, Math.Max(r.Left + 1, edge), 0,
-                Palette.Alpha(tint, _p.Dark ? 40 : 30), Palette.Alpha(tint, _p.Dark ? 110 : 85), Shader.TileMode.Clamp!));
-            c.DrawPath(liquid, lp);
-            // a light sheen sliding through the liquid
-            float sx = r.Left + (r.Width() * 1.4f) * ((t * 0.45f) % 1f) - r.Width() * 0.2f;
-            if (sx < edge)
-            {
-                using var sh = new Paint(PaintFlags.AntiAlias);
-                sh.SetShader(new LinearGradient(sx - Dp(30), 0, sx + Dp(30), 0,
-                    new[] { AColor.Argb(0, 255, 255, 255).ToArgb(), AColor.Argb(_p.Dark ? 60 : 90, 255, 255, 255).ToArgb(), AColor.Argb(0, 255, 255, 255).ToArgb() },
+                float sx = tube.Left + (tube.Width() + Dp(120)) * ((t * 0.35f) % 1f) - Dp(60);
+                sh.SetShader(new LinearGradient(sx - Dp(50), 0, sx + Dp(50), 0,
+                    new[] { AColor.Argb(0, 255, 255, 255).ToArgb(), AColor.Argb(110, 220, 255, 235).ToArgb(), AColor.Argb(0, 255, 255, 255).ToArgb() },
                     null, Shader.TileMode.Clamp!));
-                c.ClipPath(liquid);
-                c.DrawRect(r, sh);
+                c.DrawRect(tube, sh);
             }
+            // bubbles: small bright dots drifting to the front and up
+            using (var bp = new Paint(PaintFlags.AntiAlias) { Color = AColor.Argb(150, 255, 255, 255) })
+                for (int i = 0; i < 7; i++)
+                {
+                    float ph = (t * (0.25f + i * 0.045f) + i * 0.37f) % 1f;
+                    float bx = tube.Left + (front - tube.Left) * ph;
+                    float by = tube.Bottom - tube.Height() * (0.25f + 0.5f * ((i * 0.61f + ph * 1.7f) % 1f));
+                    c.DrawCircle(bx, by, Dp(0.9f + (i % 3) * 0.35f), bp);
+                }
+            // a highlight along the top of the water
+            using (var hl = new Paint(PaintFlags.AntiAlias) { Color = AColor.Argb(90, 255, 255, 255) })
+                c.DrawRect(tube.Left, tube.Top, front, tube.Top + tube.Height() * 0.38f, hl);
+            // full: one bright wave sweeps the tube
+            if (done >= 0 && done < 1)
+            {
+                float wx = tube.Left + (tube.Width() + Dp(80)) * done - Dp(40);
+                using var fl = new Paint(PaintFlags.AntiAlias);
+                fl.SetShader(new LinearGradient(wx - Dp(40), 0, wx + Dp(40), 0,
+                    new[] { AColor.Argb(0, 255, 255, 255).ToArgb(), AColor.Argb(200, 255, 255, 255).ToArgb(), AColor.Argb(0, 255, 255, 255).ToArgb() },
+                    null, Shader.TileMode.Clamp!));
+                c.DrawRect(tube, fl);
+            }
+            c.Restore();
         }
         c.Restore();
-        // a pulsing dot: work in progress
-        float pulse = 0.5f + 0.5f * MathF.Sin(t * 6f);
-        using (var halo = new Paint(PaintFlags.AntiAlias) { Color = Palette.Alpha(tint, (int)(70 * pulse)) })
-            c.DrawCircle(r.Left + Dp(24), r.CenterY(), Dp(5 + 4 * pulse), halo);
-        using (var dot = new Paint(PaintFlags.AntiAlias) { Color = tint })
-            c.DrawCircle(r.Left + Dp(24), r.CenterY(), Dp(5), dot);
-        Text(c, title, r.Left + Dp(42), r.Top + Dp(27), Dp(15.5f), _p.Text, bold: true, maxW: r.Width() - Dp(60));
-        Text(c, sub, r.Left + Dp(42), r.Top + Dp(47), Dp(12.5f), _p.Sub, maxW: r.Width() - Dp(60));
-        PostInvalidateOnAnimation(); // only while downloading
+        // the glowing front, outside the clip so it spills a little light
+        if (level > 0.01f && level < 0.999f)
+        {
+            using var glow = new Paint(PaintFlags.AntiAlias);
+            float gr = tube.Height() * 1.4f;
+            glow.SetShader(new RadialGradient(front, tube.CenterY(), gr, Palette.Alpha(light, 120), Palette.Alpha(light, 0), Shader.TileMode.Clamp!));
+            c.DrawCircle(front, tube.CenterY(), gr, glow);
+        }
+        // glass rim
+        using (var rim = new Paint(PaintFlags.AntiAlias) { Color = _p.CardBorder, StrokeWidth = Math.Max(1, Dp(0.8f)) })
+        {
+            rim.SetStyle(Paint.Style.Stroke);
+            c.DrawRoundRect(tube, rad, rad, rim);
+        }
     }
 
     void Banner(Canvas c, RectF r, string title, string sub, AColor tint, bool chevron)

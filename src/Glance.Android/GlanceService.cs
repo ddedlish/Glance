@@ -310,7 +310,7 @@ public sealed class GlanceService : Service
         _ = Task.Run(async () =>
         {
             var u = await Updates.CheckAsync().ConfigureAwait(false);
-            if (u is not null) _main.Post(() => Updater.Announce(u));
+            if (u is not null) _main.Post(() => { Updater.Announce(u); Updater.Prefetch(u); });
         });
     }
 

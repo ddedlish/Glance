@@ -225,13 +225,13 @@ internal sealed class SettingsView : GlassView
     public int Theme { get; set; }
     public string VersionText { get; set; } = "";
 
-    public event Action? BackRequested, PopupRequested, SourceRequested;
+    public event Action? BackRequested, PopupRequested, SourceRequested, AuthorRequested, DonateRequested;
     public event Action<bool>? ShadeToggled, SoundsToggled, NotifyToggled, AutoUpdateToggled;
     public event Action<int>? LowAtChanged, ThemeChanged;
 
     static readonly string[] ThemeNames = { "Системная", "Тёмная", "Светлая" };
 
-    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _autoR = new(), _popR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new();
+    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _autoR = new(), _popR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new(), _authorR = new(), _donateR = new();
     long _shadeT0 = -10_000, _soundT0 = -10_000, _notifyT0 = -10_000, _autoT0 = -10_000, _lowT0 = -10_000, _themeT0 = -10_000;
     float _lowFrom, _themeFrom;
     bool _drawnOnce;
@@ -243,7 +243,7 @@ internal sealed class SettingsView : GlassView
 
     // ───────── layout (dp) ─────────
 
-    const float Gap = 12, RowH = 72, SegCardH = 116, AboutH = 156, Head = 28;
+    const float Gap = 12, RowH = 72, SegCardH = 116, AboutH = 240, Head = 28;
 
     float ContentHeight() => Dp(TopInset / _d + 20 + 96 + 7 * Head + 5 * (RowH + Gap) + 2 * (SegCardH + Gap) + AboutH + Gap + 40) + BottomInset;
 
@@ -347,6 +347,8 @@ internal sealed class SettingsView : GlassView
         y += Dp(Head);
         Section(canvas, "О программе", y);
         var ab = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(AboutH));
+        _authorR = new RectF(ab.Left, ab.Top + Dp(84), ab.Right, ab.Top + Dp(136));
+        _donateR = new RectF(ab.Left, ab.Top + Dp(136), ab.Right, ab.Top + Dp(188));
         _srcR = new RectF(ab.Left, ab.Bottom - Dp(52), ab.Right, ab.Bottom);
         Shift(canvas, idx++, () => DrawAbout(canvas, ab));
 
@@ -609,12 +611,56 @@ internal sealed class SettingsView : GlassView
         float tx = tile.Right + Dp(14);
         Text(c, "Glance для Android", tx, r.Top + Dp(37), Dp(16.5f), _p.Text, bold: true, maxW: r.Right - tx - Dp(16));
         Text(c, VersionText, tx, r.Top + Dp(58), Dp(12.5f), _p.Sub, maxW: r.Right - tx - Dp(16));
-        Text(c, "Автор: ddedlish", tx, r.Top + Dp(78), Dp(12.5f), _p.Sub, maxW: r.Right - tx - Dp(16));
 
+        // three link rows: the author's profile, a donation, the source code
+        LinkRow(c, r, r.Top + Dp(84), "Автор — ddedlish", "Профиль в Steam", AColor.Argb(255, 102, 192, 244), Glyph.Person);
+        LinkRow(c, r, r.Top + Dp(136), "Поддержать автора", "Пожертвование на Boosty, по желанию", AColor.Argb(255, 255, 94, 135), Glyph.Heart);
+        LinkRow(c, r, r.Top + Dp(188), "Исходный код", "GitHub · ddedlish/Glance", _p.Accent, Glyph.Code);
+    }
+
+    enum Glyph { Person, Heart, Code }
+
+    /// <summary>A divider, a small coloured glyph, title + subtitle and a chevron; the heart beats softly.</summary>
+    void LinkRow(Canvas c, RectF card, float top, string title, string sub, AColor col, Glyph g)
+    {
         using (var div = new Paint { Color = _p.CardBorder, StrokeWidth = Math.Max(1, Dp(0.8f)) })
-            c.DrawLine(r.Left + Dp(18), r.Bottom - Dp(52), r.Right - Dp(18), r.Bottom - Dp(52), div);
-        Text(c, "Исходный код на GitHub", r.Left + Dp(18), r.Bottom - Dp(20), Dp(15), _p.Accent, bold: true, maxW: r.Width() - Dp(60));
-        Chevron(c, r.Right - Dp(24), r.Bottom - Dp(26), _p.Sub);
+            c.DrawLine(card.Left + Dp(18), top, card.Right - Dp(18), top, div);
+        float cx = card.Left + Dp(34), cy = top + Dp(26);
+        using (var bg = new Paint(PaintFlags.AntiAlias) { Color = Palette.Alpha(col, _p.Dark ? 60 : 46) })
+            c.DrawCircle(cx, cy, Dp(15), bg);
+        using var p = new Paint(PaintFlags.AntiAlias) { Color = col, StrokeWidth = Dp(2), StrokeCap = Paint.Cap.Round, StrokeJoin = Paint.Join.Round };
+        switch (g)
+        {
+            case Glyph.Person:
+                c.DrawCircle(cx, cy - Dp(3.5f), Dp(3.6f), p);
+                c.DrawArc(new RectF(cx - Dp(7), cy + Dp(1.5f), cx + Dp(7), cy + Dp(13)), 180, 180, true, p);
+                break;
+            case Glyph.Heart:
+            {
+                bool alive = Now - _born < 6000; // a few beats after the page opens, then a still screen costs nothing
+                float beat = alive ? 1 + 0.08f * MathF.Max(0, MathF.Sin(Now / 1000f * MathF.PI * 2.2f)) * MathF.Max(0, MathF.Sin(Now / 1000f * MathF.PI * 1.1f)) : 1;
+                float k = Dp(6.5f) * beat;
+                using var h = new Path();
+                h.MoveTo(cx, cy + k * 0.95f);
+                h.CubicTo(cx - k * 1.6f, cy - k * 0.1f, cx - k * 0.9f, cy - k * 1.25f, cx, cy - k * 0.45f);
+                h.CubicTo(cx + k * 0.9f, cy - k * 1.25f, cx + k * 1.6f, cy - k * 0.1f, cx, cy + k * 0.95f);
+                h.Close();
+                c.DrawPath(h, p);
+                if (alive) PostInvalidateOnAnimation();
+                break;
+            }
+            default:
+                p.SetStyle(Paint.Style.Stroke);
+                c.DrawLine(cx - Dp(2.5f), cy - Dp(5), cx - Dp(7), cy, p);
+                c.DrawLine(cx - Dp(7), cy, cx - Dp(2.5f), cy + Dp(5), p);
+                c.DrawLine(cx + Dp(2.5f), cy - Dp(5), cx + Dp(7), cy, p);
+                c.DrawLine(cx + Dp(7), cy, cx + Dp(2.5f), cy + Dp(5), p);
+                break;
+        }
+        float tx = card.Left + Dp(60);
+        Text(c, title, tx, top + Dp(23), Dp(15), _p.Text, bold: true, maxW: card.Right - tx - Dp(36));
+        Text(c, sub, tx, top + Dp(41), Dp(12), _p.Sub, maxW: card.Right - tx - Dp(36));
+        Chevron(c, card.Right - Dp(24), top + Dp(26), _p.Sub);
     }
 
     // ───────── touch ─────────
@@ -689,6 +735,8 @@ internal sealed class SettingsView : GlassView
                     }
                 }
                 else if (_srcR.Contains(x, y)) SourceRequested?.Invoke();
+                else if (_authorR.Contains(x, y)) AuthorRequested?.Invoke();
+                else if (_donateR.Contains(x, y)) DonateRequested?.Invoke();
                 PerformClick();
                 return true;
         }
