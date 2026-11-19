@@ -83,7 +83,12 @@ public sealed class GlanceService : Service
         Watch();
         // self-test: show the connect popup for the demo earbuds
         if (demo && intent?.GetBooleanExtra("popup", false) == true)
-            _main.PostDelayed(() => { if (_dev?.Connected.FirstOrDefault(a => a.HasParts) is { } b) Announce(b, force: true); }, 900);
+            _main.PostDelayed(() =>
+            {
+                var b = _dev?.Connected.FirstOrDefault(a => a.HasParts);
+                Android.Util.Log.Info("Glance", $"announce test: {(b is null ? "no earbuds" : b.DisplayName)}");
+                if (b is not null) Announce(b, force: true);
+            }, 900);
         return StartCommandResult.Sticky;
     }
 
@@ -138,6 +143,7 @@ public sealed class GlanceService : Service
     void Announce(Accessory a, bool force = false)
     {
         if (!force && MainActivity.Visible) return; // the app itself is on screen
+        Android.Util.Log.Info("Glance", $"announce: {a.DisplayName}");
         if (ConnectPopup.Show(this, a)) return;
         // no «Поверх других приложений»: a heads-up notification that peeks for a few seconds instead
         try
@@ -164,7 +170,7 @@ public sealed class GlanceService : Service
                 .Build();
             nm.Notify(2, n);
         }
-        catch (Exception e) { Log.Error("Android connect notice", e); }
+        catch (Exception e) { Log.Error("Android connect notice", e); Android.Util.Log.Error("Glance", "connect notice failed: " + e); }
     }
 
     const string ConnectChannel = "glance-connect";

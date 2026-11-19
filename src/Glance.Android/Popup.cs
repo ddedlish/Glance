@@ -21,7 +21,7 @@ internal static class ConnectPopup
 
     public static bool Show(Context ctx, Accessory a)
     {
-        if (!Allowed(ctx)) return false;
+        if (!Allowed(ctx)) { Android.Util.Log.Info("Glance", "popup: not allowed (overlay permission)"); return false; }
         try
         {
             if (_view is not null && _view.Key == a.Key) { _view.Bump(); return true; }
@@ -44,10 +44,10 @@ internal static class ConnectPopup
             };
             _wm.AddView(view, lp);
             _view = view;
-            Android.Util.Log.Info("Glance", $"popup: {a.DisplayName}");
+            Android.Util.Log.Info("Glance", $"popup shown: {a.DisplayName}");
             return true;
         }
-        catch (Exception e) { Log.Error("Android popup", e); _view = null; return false; }
+        catch (Exception e) { Log.Error("Android popup", e); Android.Util.Log.Error("Glance", "popup failed: " + e); _view = null; return false; }
     }
 
     /// <summary>Levels changed: redraw the card if it shows this device.</summary>
