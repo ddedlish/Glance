@@ -546,6 +546,7 @@ internal sealed partial class AppHost : ApplicationContext
         if (!Pro.IsActive) m.Item("Glance Pro…", () => Ui.Post(() => ProUi.Prompt(_s)));
         m.Item("Bluetooth", FlyoutForm.OpenBluetoothSettings);
         m.Item("Что нового", () => Ui.Post(WhatsNewForm.ShowWindow));
+        m.Item("Поддержать автора ♥", ProUi.Donate);
         m.Item("Настройки Glance", OpenSettings);
         m.Separator();
         m.Item("Выход", ExitApp);

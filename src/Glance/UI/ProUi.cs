@@ -5,6 +5,9 @@ internal static class ProUi
 {
     public const string BuyUrl = "https://boosty.to/ddedlish";
 
+    /// <summary>Optional donation: the same Boosty page, any amount, unlocks nothing and asks for nothing.</summary>
+    public static void Donate() => AppInfo.OpenUrl(BuyUrl);
+
     public static readonly string[] Features =
     {
         "Виджет на рабочем столе с зарядом всех устройств",

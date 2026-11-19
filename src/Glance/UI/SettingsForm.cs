@@ -228,6 +228,9 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         {
             Row($"Pro активирован · {Pro.Info!.Owner}", $"Спасибо за поддержку! Ключ от {Pro.Info.Issued:dd.MM.yyyy}", null);
         }
+        var tip = new FlatButton(sc, "Поддержать ♥");
+        tip.Click += (_, _) => ProUi.Donate();
+        Row("Пожертвование — по желанию", "Любая сумма на Boosty. Glance остаётся бесплатным, ничего не блокируется", tip);
         else
         {
             var buy = new FlatButton(sc, "Купить", primary: true);
@@ -374,6 +377,9 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         var folder = new FlatButton(sc, "Открыть");
         folder.Click += (_, _) => { try { Process.Start(new ProcessStartInfo(AppInfo.DataDir) { UseShellExecute = true }); } catch { } };
         Row("Данные и журнал", "Настройки, история заряда и журнал хранятся только на этом компьютере", folder);
+        var donate = new FlatButton(sc, "Поддержать ♥", primary: true);
+        donate.Click += (_, _) => ProUi.Donate();
+        Row("Поддержать автора", "Необязательное пожертвование любой суммой на Boosty — на развитие Glance и версии для Android", donate);
         var author = new FlatButton(sc, "Steam");
         author.Click += (_, _) => AppInfo.OpenUrl(AppInfo.AuthorUrl);
         Row("Автор — ddedlish", "Glance © 2026 ddedlish. Без рекламы, без сбора данных", author);
