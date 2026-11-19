@@ -1,0 +1,31 @@
+﻿Glance 4.2.15 Alpha, Windows 10.0.26100.0, экран {Width=1024, Height=768}
+glass-toast: 34 мс
+glass-toast-bar: 4 мс
+glass-panel: 32 мс
+glass-settings: 141 мс
+glass-settings-оформление: 431 мс
+glass-settings-значки-в-трее: 193 мс
+glass-settings-уведомления: 608 мс
+glass-settings-мышь-и-клавиатура: 476 мс
+glass-settings-наушники: 274 мс
+glass-settings-система: 293 мс
+glass-settings-обновления: 144 мс
+glass-settings-glance-pro: 334 мс
+glass-settings-о-программе: 371 мс
+glass-widget: 7 мс
+classic-toast: 4 мс
+classic-toast-bar: 4 мс
+classic-panel: 12 мс
+classic-settings: 20 мс
+classic-settings-оформление: 336 мс
+classic-settings-значки-в-трее: 173 мс
+classic-settings-уведомления: 790 мс
+classic-settings-мышь-и-клавиатура: 434 мс
+classic-settings-наушники: 262 мс
+classic-settings-система: 350 мс
+classic-settings-обновления: 139 мс
+classic-settings-glance-pro: 343 мс
+classic-settings-о-программе: 398 мс
+classic-widget: 3 мс
+Ошибок в журнале: 0 (из интерфейса: 0)
+ИТОГ: OK

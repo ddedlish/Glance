@@ -1,0 +1,33 @@
+2026-11-19 18:41:07 INF Started 4.2.15 Alpha
+2026-11-19 18:41:09 INF Self-test: Glance 4.2.15 Alpha, Windows 10.0.26100.0, экран {Width=1024, Height=768}
+2026-11-19 18:41:09 INF BLE watcher stopped: RadioNotAvailable
+2026-11-19 18:41:11 INF Self-test: glass-toast: 34 мс
+2026-11-19 18:41:12 INF Self-test: glass-toast-bar: 4 мс
+2026-11-19 18:41:13 INF Self-test: glass-panel: 32 мс
+2026-11-19 18:41:15 INF Self-test: glass-settings: 141 мс
+2026-11-19 18:41:16 INF Self-test: glass-settings-оформление: 431 мс
+2026-11-19 18:41:17 INF Self-test: glass-settings-значки-в-трее: 193 мс
+2026-11-19 18:41:18 INF Self-test: glass-settings-уведомления: 608 мс
+2026-11-19 18:41:19 INF Self-test: glass-settings-мышь-и-клавиатура: 476 мс
+2026-11-19 18:41:20 INF Self-test: glass-settings-наушники: 274 мс
+2026-11-19 18:41:21 INF Self-test: glass-settings-система: 293 мс
+2026-11-19 18:41:22 INF Self-test: glass-settings-обновления: 144 мс
+2026-11-19 18:41:23 INF Self-test: glass-settings-glance-pro: 334 мс
+2026-11-19 18:41:24 INF Self-test: glass-settings-о-программе: 371 мс
+2026-11-19 18:41:25 INF Self-test: glass-widget: 7 мс
+2026-11-19 18:41:27 INF BLE watcher stopped: RadioNotAvailable
+2026-11-19 18:41:27 INF Self-test: classic-toast: 4 мс
+2026-11-19 18:41:28 INF Self-test: classic-toast-bar: 4 мс
+2026-11-19 18:41:29 INF Self-test: classic-panel: 12 мс
+2026-11-19 18:41:31 INF Self-test: classic-settings: 20 мс
+2026-11-19 18:41:32 INF Self-test: classic-settings-оформление: 336 мс
+2026-11-19 18:41:32 INF Self-test: classic-settings-значки-в-трее: 173 мс
+2026-11-19 18:41:34 INF Self-test: classic-settings-уведомления: 790 мс
+2026-11-19 18:41:35 INF Self-test: classic-settings-мышь-и-клавиатура: 434 мс
+2026-11-19 18:41:36 INF Self-test: classic-settings-наушники: 262 мс
+2026-11-19 18:41:37 INF Self-test: classic-settings-система: 350 мс
+2026-11-19 18:41:38 INF Self-test: classic-settings-обновления: 139 мс
+2026-11-19 18:41:39 INF Self-test: classic-settings-glance-pro: 343 мс
+2026-11-19 18:41:40 INF Self-test: classic-settings-о-программе: 398 мс
+2026-11-19 18:41:41 INF Self-test: classic-widget: 3 мс
+2026-11-19 18:41:41 INF Self-test: Ошибок в журнале: 0 (из интерфейса: 0)
