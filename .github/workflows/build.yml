@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
       - name: Unit tests
@@ -46,7 +46,7 @@ jobs:
         rid: [win-x64, win-x86]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
       - name: Publish ${{ matrix.rid }} (self-contained single file = installer + app)
@@ -112,7 +112,7 @@ jobs:
         rid: [linux-x64, linux-arm64]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
       - name: Publish ${{ matrix.rid }} (self-contained single file = installer + app)
@@ -140,7 +140,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # .NET 10 (LTS) for Android: net8.0-android is out of support. Pinned by src/Glance.Android/global.json.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
