@@ -80,6 +80,7 @@ if adb logcat -d -s Glance:I | grep -q "forecast:"; then note "dark-demo: про
 else fail "dark-demo: прогноз «хватит на…» не показан"; fi
 shade dark-shade
 bottom dark-demo-bottom
+adb logcat -d -s Glance:I | grep -q "scrim: shown" && note "dark-demo-bottom: под строкой состояния — мягкое затемнение" || fail "dark-demo-bottom: затемнение под строкой состояния не появилось"
 step dark-demo-update yes --ez demo true --es fakeupdate 9.9.9
 step dark-demo-download yes --ez demo true --es fakeupdate 9.9.9 --ef fakeprogress 0.42
 step light-demo-installing no --ez demo true --es fakeupdate 9.9.9 --ef fakeprogress 0.7 --es fakestage installing

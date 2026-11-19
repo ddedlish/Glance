@@ -33,6 +33,27 @@ internal sealed class Backdrop : View
 }
 
 /// <summary>
+/// A soft fade under the status bar, shown once the page is scrolled: cards slip under it instead of colliding with
+/// the clock and the icons. Not clickable — touches fall through to the page.
+/// </summary>
+internal sealed class StatusScrim : View
+{
+    public Palette P { get; set; } = Palette.For(true);
+    public StatusScrim(Context c) : base(c) { }
+
+    protected override void OnDraw(Canvas canvas)
+    {
+        float h = Height;
+        if (h <= 0) return;
+        using var p = new Paint();
+        p.SetShader(new LinearGradient(0, 0, 0, h,
+            new[] { Palette.Alpha(P.BgTop, 225).ToArgb(), Palette.Alpha(P.BgTop, 160).ToArgb(), Palette.Alpha(P.BgTop, 0).ToArgb() },
+            new[] { 0f, 0.6f, 1f }, Shader.TileMode.Clamp!));
+        canvas.DrawRect(0, 0, Width, h, p);
+    }
+}
+
+/// <summary>
 /// The whole screen, drawn by hand: header, hero card with the live liquid ring, one glass card per accessory
 /// (earbuds get L / R / case rings), a gear that opens Settings, and banners (permission, Bluetooth off, update).
 /// Lives inside a ScrollView: reports its content height in OnMeasure.
@@ -419,11 +440,18 @@ internal sealed class GlanceView : GlassView
         float tx = tile.Right + Dp(14);
         int? lvl0 = a.Level;
         float pctW = MeasureBig(lvl0 is int l0 ? $"{l0}%" : "—") + Dp(a.Charging ? 34 : 14);
-        Text(c, a.DisplayName, tx, r.Top + Dp(37), Dp(16.5f), _p.Text, bold: true, maxW: r.Right - tx - pctW - Dp(12));
-        string link = phoneCard ? (a.Charging ? "Заряжается" : a.Profile.Brand) : (a.Charging ? "Заряжается · " : "") + a.Link;
-        string feat = phoneCard ? "" : Profiles.Features(a.Profile);
-        if (feat.Length > 0) link += " · " + feat;
-        Text(c, link, tx, r.Top + Dp(58), Dp(12.5f), _p.Sub, maxW: r.Right - tx - Math.Max(pctW, Dp(74)) - Dp(12)); // clear of the bar
+        TextShrink(c, a.DisplayName, tx, r.Top + Dp(37), Dp(16.5f), Dp(13.5f), _p.Text, true, r.Right - tx - pctW - Dp(12));
+        // «Заряжается · Bluetooth · Apple · ANC»: only whole pieces that fit — never «Blueto…»
+        var pieces = new List<string>(6);
+        if (phoneCard) pieces.Add(a.Charging ? "Заряжается" : a.Profile.Brand);
+        else
+        {
+            if (a.Charging) pieces.Add("Заряжается");
+            pieces.Add(a.Link);
+            pieces.AddRange(Profiles.Features(a.Profile).Split(" · ", StringSplitOptions.RemoveEmptyEntries));
+        }
+        float subW = r.Right - tx - Math.Max(pctW, Dp(74)) - Dp(12); // clear of the bar
+        Text(c, Pieces(pieces, Dp(12.5f), subW), tx, r.Top + Dp(58), Dp(12.5f), _p.Sub, maxW: subW);
 
         int? lvl = a.Level;
         float shown = lvl is int l ? Tween("C:" + a.Key, l) : 0;
@@ -455,6 +483,34 @@ internal sealed class GlanceView : GlassView
                 TextCentered(c, label, cx, top + Dp(62), Dp(12), _p.Sub, false);
             }
         }
+    }
+
+    /// <summary>A name that is a little too long gets a slightly smaller font (down to minSize) before any «…».</summary>
+    void TextShrink(Canvas c, string s, float x, float baseline, float size, float minSize, AColor color, bool bold, float maxW)
+    {
+        float sz = size;
+        if (maxW > 0)
+        {
+            using var p = TextPaint(size, bold);
+            float tw = p.MeasureText(s);
+            if (tw > maxW) sz = Math.Max(minSize, size * maxW / tw);
+        }
+        Text(c, s, x, baseline, sz, color, bold, maxW);
+    }
+
+    /// <summary>Joins pieces with « · » while whole ones fit the width; the first piece is always kept (shortened if it must).</summary>
+    static string Pieces(IEnumerable<string> parts, float size, float maxW)
+    {
+        using var p = TextPaint(size, false);
+        string acc = "";
+        foreach (var part in parts)
+        {
+            if (string.IsNullOrWhiteSpace(part)) continue;
+            string next = acc.Length == 0 ? part : acc + " · " + part;
+            if (acc.Length > 0 && p.MeasureText(next) > maxW) break;
+            acc = next;
+        }
+        return acc;
     }
 
     float MeasureBig(string s)
@@ -569,7 +625,7 @@ internal sealed class GlanceView : GlassView
         float tx = ring.Right + Dp(18), tw = r.Right - tx - Dp(14);
         var tile = new RectF(tx, r.Top + Dp(26), tx + Dp(22), r.Top + Dp(48));
         Icons.Draw(c, a.Kind, tile, Palette.KindColor(a.Kind), Dp(2));
-        Text(c, a.DisplayName, tx + Dp(28), r.Top + Dp(43), Dp(16), _p.Text, bold: true, maxW: tw - Dp(28));
+        TextShrink(c, a.DisplayName, tx + Dp(28), r.Top + Dp(43), Dp(16), Dp(14), _p.Text, true, tw - Dp(28));
         string line = a.Charging ? "Заряжается" : lvl <= LowAt ? "Пора зарядить" : lvl <= 40 ? "Разрядится первым" : "Всё в порядке";
         var fc = Forecast.Long(a, _dev.Demo);
         Text(c, line, tx, r.Top + Dp(fc is null ? 74 : 70), Dp(14.5f), lvl <= LowAt && !a.Charging ? Palette.Red : _p.Text, maxW: tw);

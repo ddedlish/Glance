@@ -12,10 +12,10 @@
     <RootNamespace>Glance.Droid</RootNamespace>
     <AssemblyName>Glance.Android</AssemblyName>
     <ApplicationId>io.github.ddedlish.glance</ApplicationId>
-    <Version>5.0.18</Version>
+    <Version>5.0.19</Version>
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
     <!-- versionCode must grow with every release: 5.0.8 → 50008 (CI passes it from the version) -->
-    <ApplicationVersion>50018</ApplicationVersion>
+    <ApplicationVersion>50019</ApplicationVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <Deterministic>true</Deterministic>

@@ -278,7 +278,7 @@ internal static class ShadeArt
         bool buds = a.HasParts;
         float rightW = buds ? 3 * 30 + 4 : 70;
         float textW = (r.Width() / x.S) - (tx - r.Left) / x.S - rightW - 8;
-        Text(x, a.DisplayName, tx, r.CenterY() - x.Dp(2), 14, x.P.Text, true, textW);
+        TextShrink(x, a.DisplayName, tx, r.CenterY() - x.Dp(2), 14, 12, x.P.Text, true, textW);
         string sub = a.Charging ? "Заряжается" : lvl is null ? $"{a.Link} · заряд не передаётся" : a.Link;
         Text(x, sub, tx, r.CenterY() + x.Dp(14), 11.5f, a.Charging ? Palette.Green : x.P.Sub, false, textW);
 
@@ -462,6 +462,18 @@ internal static class ShadeArt
         using var p = Font(x, sp, bold);
         p.Color = col;
         x.C.DrawText(Fit(p, s, x.Dp(maxWDp)), px, baseline, p);
+    }
+
+    /// <summary>A long name first gets a slightly smaller font (down to minSp), only then «…».</summary>
+    static void TextShrink(Ctx x, string s, float px, float baseline, float sp, float minSp, AColor col, bool bold, float maxWDp)
+    {
+        float size = sp;
+        using (var p = Font(x, sp, bold))
+        {
+            float w = p.MeasureText(s), max = x.Dp(maxWDp);
+            if (max > 0 && w > max) size = Math.Max(minSp, sp * max / w);
+        }
+        Text(x, s, px, baseline, size, col, bold, maxWDp);
     }
 
     static void TextCentered(Ctx x, string s, float cx, float baseline, float sp, AColor col, bool bold)

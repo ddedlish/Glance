@@ -24,6 +24,7 @@ public sealed class MainActivity : Activity
     SettingsView? _settings;
     ScrollView? _mainScroll, _setScroll;
     Backdrop? _back;
+    StatusScrim? _scrim;
     BackCallback? _backCb;
     bool _settingsShown;
     const string Prefs = "glance";
@@ -49,6 +50,12 @@ public sealed class MainActivity : Activity
         _settings = new SettingsView(this) { VersionText = Updates.VersionText };
         _setScroll.AddView(_settings, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
         root.AddView(_setScroll, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+        // the status bar gets a soft fade once a page is scrolled: cards no longer run into the clock and icons
+        float dens = Resources?.DisplayMetrics?.Density ?? 2f;
+        _scrim = new StatusScrim(this) { Alpha = 0 };
+        root.AddView(_scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, (int)(SystemBar("status_bar_height") + 18 * dens)));
+        scroll.ScrollChange += (_, _) => UpdateScrim();
+        _setScroll.ScrollChange += (_, _) => UpdateScrim();
         SetContentView(root);
 
         _view.TopInset = _settings.TopInset = SystemBar("status_bar_height");
@@ -208,10 +215,24 @@ public sealed class MainActivity : Activity
 
     bool IsDark => UserPrefs.Dark(this);
 
+    /// <summary>The status-bar fade follows the page in front: invisible at the top, full after ~24 dp of scrolling.</summary>
+    void UpdateScrim()
+    {
+        if (_scrim is null) return;
+        var sv = _settingsShown ? _setScroll : _mainScroll;
+        float d = Resources?.DisplayMetrics?.Density ?? 2f;
+        float a = Math.Clamp((sv?.ScrollY ?? 0) / (24 * d), 0, 1);
+        if (Math.Abs(_scrim.Alpha - a) > 0.01f) _scrim.Alpha = a;
+        if (a >= 1 && !_scrimLogged) { _scrimLogged = true; Android.Util.Log.Info("Glance", "scrim: shown"); }
+    }
+
+    bool _scrimLogged;
+
     void ApplyTheme()
     {
         var p = Palette.For(IsDark);
         if (_back is not null) { _back.P = p; _back.Invalidate(); }
+        if (_scrim is not null) { _scrim.P = p; _scrim.Invalidate(); }
         _view?.SetPalette(p);
         _settings?.SetPalette(p);
         var w = Window;
@@ -287,6 +308,7 @@ public sealed class MainActivity : Activity
                 .WithEndAction(new Java.Lang.Runnable(() => { if (!_settingsShown && _setScroll is not null) _setScroll.Visibility = ViewStates.Gone; }))!.Start();
             RegisterBack(false);
         }
+        UpdateScrim();
         Android.Util.Log.Info("Glance", show ? "settings: open" : "settings: closed");
     }
 
