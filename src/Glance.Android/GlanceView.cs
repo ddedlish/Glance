@@ -297,7 +297,7 @@ internal sealed class GlanceView : View
         string link = phoneCard ? (a.Charging ? "Заряжается" : a.Profile.Brand) : (a.Charging ? "Заряжается · " : "") + a.Link;
         string feat = phoneCard ? "" : Profiles.Features(a.Profile);
         if (feat.Length > 0) link += " · " + feat;
-        Text(c, link, tx, r.Top + Dp(58), Dp(12.5f), _p.Sub, maxW: r.Right - tx - pctW - Dp(12));
+        Text(c, link, tx, r.Top + Dp(58), Dp(12.5f), _p.Sub, maxW: r.Right - tx - Math.Max(pctW, Dp(74)) - Dp(12)); // clear of the bar
 
         int? lvl = a.Level;
         float shown = lvl is int l ? Tween("C:" + a.Key, l) : 0;
