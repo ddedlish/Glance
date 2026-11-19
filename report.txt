@@ -1,0 +1,45 @@
+Glance Android self-test, 14 (API 34)
+Performing Streamed Install
+Success
+update: предыдущая версия обновилась на новую без переустановки
+Success
+dark-demo: запуск 2889 мс
+dark-demo: прогноз «хватит на…» показан — Galaxy Watch6 Хватит на ≈ 2 ч 45 мин · до 21:28
+dark-demo: раздел «Можно подключить» показан — paired=2
+dark-shade: уведомление в шторке есть
+dark-demo-bottom: прокрутка до конца
+dark-demo-bottom: под строкой состояния — мягкое затемнение
+dark-demo-update: запуск 1901 мс
+dark-demo-download: запуск 2048 мс
+light-demo-installing: запуск 2538 мс
+  11-19 18:43:16.224  5321  5321 I Glance  : update: Downloading — 
+  11-19 18:43:18.553  5321  5368 I Glance  : update: downloaded 12176034 bytes in 2.3 s, 6 connection(s), 5.14 MB/s
+  11-19 18:43:18.680  5321  5368 I Glance  : update: verify io.github.ddedlish.glance 5.0.9 (50009) over 50021
+  11-19 18:43:18.809  5321  5368 I Glance  : update: Failed — 5.0.9 не новее этой
+dark-demo-download-real: APK скачан внутри приложения и проверен
+light-demo: запуск 1606 мс
+light-shade: уведомление в шторке есть
+dark-settings: запуск 1650 мс
+dark-settings: экран настроек нарисован
+dark-settings-bottom: прокрутка до конца
+dark-settings-back: «Назад» закрывает настройки
+light-settings: запуск 1561 мс
+dark-widget: запуск 1671 мс
+dark-widget: виджет нарисован в трёх размерах
+light-widget: запуск 1706 мс
+light-widget: виджет нарисован в трёх размерах
+widget: виджет Glance есть в списке виджетов системы
+  11-19 18:44:05.499  6562  6562 I Glance  : notice test: Galaxy Watch6 / Keychron K2
+  11-19 18:44:05.505  6562  6562 I Glance  : notice: full Keychron K2 87%
+  11-19 18:44:05.507  6562  6562 I Glance  : notice: low Galaxy Watch6 18%
+dark-notices: уведомления о низком заряде и полной зарядке показаны
+dark-popup: окон поверх приложений: 4
+dark-popup: окно при подключении показано
+  11-19 18:44:10.438  6660  6660 I Glance  : announce test: AirPods Pro
+  11-19 18:44:10.438  6660  6660 I Glance  : announce: AirPods Pro
+  11-19 18:44:10.706  6660  6660 I Glance  : popup shown: AirPods Pro
+  11-19 18:44:10.711  6660  6660 I Glance  : sound: Connect played
+dark-popup: звук подключения обработан
+dark-real: запуск 1084 мс
+light-real: запуск 1077 мс
+ИТОГ: OK

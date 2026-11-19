@@ -1,0 +1,268 @@
+--------- beginning of main
+11-19 18:44:19.927  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_address_manager.cc:193 unregister_client: Client unregistered
+11-19 18:44:19.927  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_address_manager.cc:197 unregister_client: Cancelled address rotation alarm
+11-19 18:44:19.934  1052  1052 D DeviceSearchAlg: search timeout = %d200
+11-19 18:44:19.935  1052  1052 W PageIndicator: Total number of pages invalid: 0. Assuming 1 page.
+11-19 18:44:19.936  1052  1052 W BcSmartspaceView: Current card is not present in the Adapter; cannot log.
+11-19 18:44:19.938  1052  1052 I OverviewComponentObserver: updateOverviewTargets: mIsHomeDisabled=false, isDefaultHomeNull=false, mIsDefaultHome=true
+11-19 18:44:19.941   825   901 D EGL_emulation: app_time_stats: avg=899.90ms min=2.36ms max=4682.92ms count=6
+11-19 18:44:19.949   825   899 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+--------- beginning of system
+11-19 18:44:19.950   519  2864 D SearchUiPerUserService: Creating SearchSessionInfo for session Id=com.google.android.apps.nexuslauncher:b3649682-a64d-4458-a4ca-b234cf979506,0
+11-19 18:44:19.951  1563  1563 I AiAiEcho: SearchContextManagerImpl::setSearchContext resultTypes=[141151] extras=[Bundle[mParcelledData.dataSize=684]] sessionId=[com.google.android.apps.nexuslauncher:b3649682-a64d-4458-a4ca-b234cf979506,0]
+11-19 18:44:19.951   519   897 D SearchUiPerUserService: Storing callback for session Id=com.google.android.apps.nexuslauncher:b3649682-a64d-4458-a4ca-b234cf979506,0 and callback=android.os.BinderProxy@18d9e59
+11-19 18:44:19.955  1052  1121 D SearchTargetUtil:  query= size=1
+11-19 18:44:19.955  1052  1121 D SearchTargetUtil: layoutType=icon_row resultType=4096 packageName= extras=Bundle{icon_container_enabled=true,zero_state_all_apps_web_suggest_count=3,rank=1.0,key_ipc_start=150728,hide_subtitle=true,zero_state_qsb_web_suggest_count=10,}ParentID: null targetID: SESSION_INFO:0::zero_state_flags
+11-19 18:44:19.962  1052  1052 I ContentCaptureHelper: Setting logging level to DEBUG
+11-19 18:44:19.962  1052  1052 D ContentCaptureManager: setFlushViewTreeAppearingEventDisabled(): setting to false
+11-19 18:44:19.962  1052  1052 D ContentCaptureManager: updateWindowAttributes(): window flags=-2137980672
+11-19 18:44:19.962  1015  1297 D BtGatt.ScanManager: uid 10131 isForeground true scanMode -1
+11-19 18:44:19.963  1015  1297 D BtGatt.ScanManager: uid 10131 isForeground true scanMode -1
+11-19 18:44:19.965  1052  1052 D MainContentCaptureSession: Destroying session (ctx=com.google.android.apps.nexuslauncher.NexusLauncherActivity@2cdf342, id=-994222883) with 0 event(s) for act:com.google.android.apps.nexuslauncher/.NexusLauncherActivity [state=2 (ACTIVE), disabled=false]
+11-19 18:44:19.970   519   897 W ActivityTaskManager: callingPackage for (uid=2000, pid=6850) has no WPC
+11-19 18:44:19.971   519   897 D CompatibilityChangeReporter: Compat change id reported: 265464455; UID 10192; state: DISABLED
+11-19 18:44:19.971   519   897 D CompatibilityChangeReporter: Compat change id reported: 265452344; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 266124927; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 265451093; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 265456536; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 255940284; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 236283604; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 263959004; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 264304459; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 264301586; UID 10192; state: DISABLED
+11-19 18:44:19.972   519   897 D CompatibilityChangeReporter: Compat change id reported: 254631730; UID 10192; state: DISABLED
+11-19 18:44:19.973   519   897 D CompatibilityChangeReporter: Compat change id reported: 273509367; UID 10192; state: DISABLED
+11-19 18:44:19.973   519   897 D CompatibilityChangeReporter: Compat change id reported: 263259275; UID 10192; state: DISABLED
+11-19 18:44:19.973   519   897 D CompatibilityChangeReporter: Compat change id reported: 174042980; UID 10192; state: DISABLED
+11-19 18:44:19.973   519   897 D CompatibilityChangeReporter: Compat change id reported: 174042936; UID 10192; state: DISABLED
+11-19 18:44:19.977  1052  1052 D AutofillManager: view is not autofillable - activity denied for autofill
+11-19 18:44:19.980   519   897 D CompatibilityChangeReporter: Compat change id reported: 181136395; UID 10192; state: DISABLED
+11-19 18:44:19.980  1052  1121 I ImeTracker: com.google.android.apps.nexuslauncher:dc3b4ca2: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT
+11-19 18:44:19.980  1052  1121 I ImeTracker: com.google.android.apps.nexuslauncher:dc3b4ca2: onFailed at PHASE_CLIENT_VIEW_SERVED
+11-19 18:44:19.981   519   897 D CompatibilityChangeReporter: Compat change id reported: 194480991; UID 10192; state: ENABLED
+11-19 18:44:19.983   519   897 D CompatibilityChangeReporter: Compat change id reported: 205907456; UID 10192; state: ENABLED
+11-19 18:44:19.984   519   897 I ActivityTaskManager: Add Task{30b8179 #20 type=standard A=10192:io.github.ddedlish.glance} to hidden list because adding Task{d529f85 #21 type=standard A=10192:io.github.ddedlish.glance}
+11-19 18:44:19.985   519   897 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=io.github.ddedlish.glance/.MainActivity} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+11-19 18:44:19.987   519  1380 D CoreBackPreview: Window{c3555b8 u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@adf860b, mPriority=0, mIsAnimationCallback=false}
+11-19 18:44:19.988   519   539 D CompatibilityChangeReporter: Compat change id reported: 135634846; UID 10192; state: DISABLED
+11-19 18:44:19.988   519   547 D CompatibilityChangeReporter: Compat change id reported: 143937733; UID 10192; state: ENABLED
+11-19 18:44:19.989   825   879 D SplashScreenView: Build android.window.SplashScreenView{d26fcff V.E...... ......ID 0,0-0,0}
+11-19 18:44:19.989   825   879 D SplashScreenView: Icon: view: null drawable: null size: 0
+11-19 18:44:19.989   825   879 D SplashScreenView: Branding: view: android.view.View{6e99acc G.ED..... ......I. 0,0-0,0 #10204ef android:id/splashscreen_branding_view} drawable: null size w: 0 h: 0
+11-19 18:44:19.992  1681  1681 I ImeTracker: com.google.android.googlequicksearchbox:search:45028bd2: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT
+11-19 18:44:19.992  1681  1681 I ImeTracker: com.google.android.googlequicksearchbox:search:45028bd2: onFailed at PHASE_CLIENT_VIEW_SERVED
+11-19 18:44:19.994   336   336 D Zygote  : Forked child process 6853
+11-19 18:44:19.996   519   888 D CompatibilityChangeReporter: Compat change id reported: 168419799; UID 10192; state: DISABLED
+11-19 18:44:19.996   519   888 D CompatibilityChangeReporter: Compat change id reported: 273564678; UID 10192; state: DISABLED
+11-19 18:44:19.997   519   547 I ActivityManager: Start proc 6853:io.github.ddedlish.glance/u0a192 for next-top-activity {io.github.ddedlish.glance/io.github.ddedlish.glance.MainActivity}
+11-19 18:44:19.997  1052  1052 W BcSmartspaceCard: No title view to update
+11-19 18:44:19.998  1052  1052 I BcSmartspaceCard: setFormattedContentDescription: text=null, iconDescription=null, contentDescription=null
+11-19 18:44:19.999  6853  6853 I ddedlish.glance: Using CollectorTypeCC GC.
+11-19 18:44:19.999  6853  6853 W ddedlish.glance: Unexpected CPU variant for x86: x86_64.
+11-19 18:44:19.999  6853  6853 W ddedlish.glance: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, tremont, kabylake, default
+11-19 18:44:20.004   519  2864 D CoreBackPreview: Window{4589f7e u0 Splash Screen io.github.ddedlish.glance}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@4ce1018, mPriority=0, mIsAnimationCallback=false}
+11-19 18:44:20.006  6853  6853 E ddedlish.glance: Not starting debugger since process cannot load the jdwp agent.
+11-19 18:44:20.010  1681  1681 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=falsecallback=android.view.ViewRootImpl$$ExternalSyntheticLambda17@5d7de77
+11-19 18:44:20.011   519   888 D CoreBackPreview: Window{8d8ae07 u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}: Setting back callback null
+11-19 18:44:20.012   519   888 W InputManager-JNI: Input channel object '8d8ae07 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity (client)' was disposed without first being removed with the input manager!
+11-19 18:44:20.019   519   598 D CompatibilityChangeReporter: Compat change id reported: 265195908; UID 10192; state: ENABLED
+11-19 18:44:20.019   825   899 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+11-19 18:44:20.023  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.023  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.023  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.023   519  2864 D CoreBackPreview: Window{e8a3a3d u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@2a015c4, mPriority=0, mIsAnimationCallback=false}
+11-19 18:44:20.023  1052  1052 D TISBindHelper: TIS service connected
+11-19 18:44:20.024  1052  1052 D b/254119092: Set mActivity=com.google.android.apps.nexuslauncher.NexusLauncherActivity@b27424e
+11-19 18:44:20.024  1052  1052 D b/254119092: mActivity and mContext agree taskbarIsPresent=false
+11-19 18:44:20.024  1052  1052 D MainContentCaptureSession: handleScheduleFlush(act:com.google.android.apps.nexuslauncher/.NexusLauncherActivity [state=1 (WAITING_FOR_SERVER), disabled=false], reason=FORCE_FLUSH): not a timeout reason because mDirectServiceInterface is not ready yet
+11-19 18:44:20.030  6853  6853 D CompatibilityChangeReporter: Compat change id reported: 171979766; UID 10192; state: ENABLED
+11-19 18:44:20.030  6853  6853 D CompatibilityChangeReporter: Compat change id reported: 242716250; UID 10192; state: ENABLED
+11-19 18:44:20.033   519  2021 D CompatibilityChangeReporter: Compat change id reported: 170503758; UID 10192; state: ENABLED
+11-19 18:44:20.036  6853  6853 D nativeloader: Configuring clns-6 for other apk /data/app/~~8eOTQh4z2l_4_a8DHurR2A==/io.github.ddedlish.glance--mKJ0zomiOK_UO9x3KOIPg==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~8eOTQh4z2l_4_a8DHurR2A==/io.github.ddedlish.glance--mKJ0zomiOK_UO9x3KOIPg==/lib/x86_64:/data/app/~~8eOTQh4z2l_4_a8DHurR2A==/io.github.ddedlish.glance--mKJ0zomiOK_UO9x3KOIPg==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/io.github.ddedlish.glance
+11-19 18:44:20.039   825   861 V WindowManagerShell: onTransitionReady android.os.BinderProxy@d2c816d: {id=24 t=CHANGE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@cb088b7} m=OPEN f=MOVE_TO_TOP leash=Surface(name=Task=21)/@0xd5632ea sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0},{WCT{android.window.IWindowContainerToken$Stub$Proxy@55c2824} m=CLOSE f=NONE leash=Surface(name=Task=20)/@0xc3329db sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0},{WCT{android.window.IWindowContainerToken$Stub$Proxy@c503f8d} m=CHANGE f=IS_DISPLAY leash=Surface(name=WindowedMagnification:0:31)/@0x2ebbc78 sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0 snapshot=Surface(name=transition snapshot: Display{#0 state=ON size=320x640 ROTATION_0})/@0xe9bff51}]}
+11-19 18:44:20.039   825   861 V WindowManagerShell: Playing animation for (#24)android.os.BinderProxy@d2c816d@0
+11-19 18:44:20.039   825   861 V WindowManagerShell:  try handler com.android.wm.shell.transition.DefaultMixedHandler@1f35a76
+11-19 18:44:20.039   825   861 V WindowManagerShell:  try handler com.android.wm.shell.keyguard.KeyguardTransitionHandler@771a877
+11-19 18:44:20.039   825   861 V WindowManagerShell:  try handler com.android.wm.shell.activityembedding.ActivityEmbeddingController@fc32ce4
+11-19 18:44:20.039   825   861 V WindowManagerShell:  try handler com.android.wm.shell.recents.RecentsTransitionHandler@a1fc54d
+11-19 18:44:20.039   825   861 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-19 18:44:20.039   825   861 V WindowManagerShell:  try handler com.android.wm.shell.pip.PipTransition@432a802
+11-19 18:44:20.039   825   861 V WindowManagerShell:  try handler com.android.wm.shell.splitscreen.StageCoordinator@c4e5513
+11-19 18:44:20.039   825   861 V WindowManagerShell:  try handler com.android.wm.shell.transition.RemoteTransitionHandler@af83350
+11-19 18:44:20.039   825   861 V WindowManagerShell:  try handler com.android.wm.shell.transition.DefaultTransitionHandler@e8d5105
+11-19 18:44:20.039   825   861 V WindowManagerShell: start default transition animation, info = {id=24 t=CHANGE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@cb088b7} m=OPEN f=MOVE_TO_TOP leash=Surface(name=Task=21)/@0xd5632ea sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0},{WCT{android.window.IWindowContainerToken$Stub$Proxy@55c2824} m=CLOSE f=NONE leash=Surface(name=Task=20)/@0xc3329db sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0},{WCT{android.window.IWindowContainerToken$Stub$Proxy@c503f8d} m=CHANGE f=IS_DISPLAY leash=Surface(name=WindowedMagnification:0:31)/@0x2ebbc78 sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0 snapshot=Surface(name=transition snapshot: Display{#0 state=ON size=320x640 ROTATION_0})/@0xe9bff51}]}
+11-19 18:44:20.039   825   861 V WindowManagerShell: Display is changing, resolve the animation hint.
+11-19 18:44:20.042   519   536 V WindowManager: Sent Transition #24 createdAt=11-19 18:44:19.817 via request=TransitionRequestInfo { type = CHANGE, triggerTask = null, remoteTransition = null, displayChange = null }
+11-19 18:44:20.042   519   536 V WindowManager:     startWCT=WindowContainerTransaction { changes = {} hops = [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-19 18:44:20.042   519   536 V WindowManager:     info={id=24 t=CHANGE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{RemoteToken{86aca30 Task{d529f85 #21 type=standard A=10192:io.github.ddedlish.glance}}} m=OPEN f=MOVE_TO_TOP leash=Surface(name=Task=21)/@0xe632cad sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0},{WCT{RemoteToken{bc92f17 Task{30b8179 #20 type=standard A=10192:io.github.ddedlish.glance}}} m=CLOSE f=NONE leash=Surface(name=Task=20)/@0x3d6e6b1 sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0},{WCT{RemoteToken{6d24cdc Display{#0 state=ON size=320x640 ROTATION_0}}} m=CHANGE f=IS_DISPLAY leash=Surface(name=WindowedMagnification:0:31)/@0xdb8c4eb sb=Rect(0, 0 - 320, 640) eb=Rect(0, 0 - 320, 640) d=0}]}
+11-19 18:44:20.047  6853  6853 V GraphicsEnvironment: Currently set values for:
+11-19 18:44:20.047  6853  6853 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+11-19 18:44:20.047  6853  6853 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+11-19 18:44:20.047  6853  6853 V GraphicsEnvironment: ANGLE GameManagerService for io.github.ddedlish.glance: false
+11-19 18:44:20.047  6853  6853 V GraphicsEnvironment: io.github.ddedlish.glance is not listed in per-application setting
+11-19 18:44:20.047  6853  6853 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+11-19 18:44:20.050   519  1380 D CompatibilityChangeReporter: Compat change id reported: 161145287; UID 10192; state: ENABLED
+11-19 18:44:20.056   825   899 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+11-19 18:44:20.061   825   861 V WindowManagerShell: loadAnimation: anim=null animAttr=0x0 type=CHANGE isEntrance=true
+11-19 18:44:20.062   825   861 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@e8d5105
+11-19 18:44:20.065  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.065  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.065  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.065  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.065  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.065  1052  1052 W TextView: onProvideContentCaptureStructure(): calling assumeLayout()
+11-19 18:44:20.069   825   861 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#24)android.os.BinderProxy@d2c816d@0
+11-19 18:44:20.070   519   536 V WindowManager: Finish Transition #24: created at 11-19 18:44:19.817 collect-started=0.042ms request-sent=0.128ms started=17.139ms ready=215.183ms sent=221.335ms finished=252.459ms
+11-19 18:44:20.072   825   861 V WindowManagerShell: Track 0 became idle
+11-19 18:44:20.072   825   861 V WindowManagerShell: All active transition animations finished
+11-19 18:44:20.078  1052  1121 I ImeTracker: com.google.android.apps.nexuslauncher:119a8224: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT
+11-19 18:44:20.078  1052  1121 I ImeTracker: com.google.android.apps.nexuslauncher:119a8224: onFailed at PHASE_CLIENT_VIEW_SERVED
+11-19 18:44:20.080  1015  1297 D BtGatt.ScanManager: uid 10131 isForeground true scanMode -1
+11-19 18:44:20.080  1015  1297 D BtGatt.ScanManager: uid 10131 isForeground true scanMode -1
+11-19 18:44:20.085   399   399 E BpTransactionCompletedListener: Failed to transact (-32)
+11-19 18:44:20.087   825   899 D LocalImageResolver: Couldn't use ImageDecoder for drawable, falling back to non-resized load.
+11-19 18:44:20.092   519   529 W JavaBinder: BinderProxy is being destroyed but the application did not call unlinkToDeath to unlink all of its death recipients beforehand.  Releasing leaked death recipient: com.android.server.wm.ActivityRecord$$ExternalSyntheticLambda0
+11-19 18:44:20.092   519   529 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-19 18:44:20.101  6853  6853 D DOTNET  : AndroidCryptoNative_InitLibraryOnLoad: jint AndroidCryptoNative_InitLibraryOnLoad(JavaVM *, void *) in /__w/1/s/src/runtime/src/native/libs/System.Security.Cryptography.Native.Android/pal_jni.c
+11-19 18:44:20.104  6853  6853 D DOTNET  : GetOptionalClassGRef: optional class com/android/org/conscrypt/OpenSSLEngineImpl was not found
+11-19 18:44:20.121   519  2021 I ActivityManager: Flag disabled. Ignoring finishAttachApplication from uid: 10192. pid: 6853
+11-19 18:44:20.126  6853  6876 D libEGL  : loaded /vendor/lib64/egl/libEGL_emulation.so
+11-19 18:44:20.128  6853  6876 D libEGL  : loaded /vendor/lib64/egl/libGLESv1_CM_emulation.so
+11-19 18:44:20.129  6853  6876 D libEGL  : loaded /vendor/lib64/egl/libGLESv2_emulation.so
+11-19 18:44:20.147  6853  6853 D CompatibilityChangeReporter: Compat change id reported: 263076149; UID 10192; state: ENABLED
+11-19 18:44:20.151  6853  6853 D CompatibilityChangeReporter: Compat change id reported: 171228096; UID 10192; state: ENABLED
+11-19 18:44:20.166   335   365 I netd    : tetherGetStats() -> {[]} <0.27ms>
+11-19 18:44:20.169   335   365 I netd    : bandwidthSetGlobalAlert(2097152) <0.09ms>
+11-19 18:44:20.175  1681  2699 I A       : Scheduled one-off task for batch; batchId=2 taskId=-1000008 corpora=[1004,1008,1014,1015]
+11-19 18:44:20.175  1681  2699 I A       : Pending callbacks: 1
+11-19 18:44:20.195  6853  6853 D BluetoothAdapter: isLeEnabled(): ON
+11-19 18:44:20.195  1015  1035 D BtGatt.GattService: registerScanner() - UUID=3036dec8-8bce-4989-a119-190a8a8bbe32
+11-19 18:44:20.196  1015  1035 I bt_stack: [INFO:le_scanning_manager.cc(155)] RegisterScanner in shim layer
+11-19 18:44:20.196  1015  1252 D BtGatt.GattService: onScannerRegistered() - UUID=3036dec8-8bce-4989-a119-190a8a8bbe32, scannerId=3, status=0
+11-19 18:44:20.196  6853  6869 D BluetoothLeScanner: onScannerRegistered() - status=0 scannerId=3 mScannerId=0
+11-19 18:44:20.196  1015  1035 D BtGatt.GattService: start scan with filters
+11-19 18:44:20.196  1015  1035 D BtGatt.GattService: enforcePrivilegedPermissionIfNeeded([BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=null, mServiceData=null, mServiceDataMask=null, mManufacturerId=76, mManufacturerData=[], mManufacturerDataMask=null, mAdvertisingDataType=-1, mAdvertisingData=null, mAdvertisingDataMask=null, mTransportBlockFilter=null], BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=0000fe2c-0000-1000-8000-00805f9b34fb, mServiceData=[], mServiceDataMask=null, mManufacturerId=-1, mManufacturerData=null, mManufacturerDataMask=null, mAdvertisingDataType=-1, mAdvertisingData=null, mAdvertisingDataMask=null, mTransportBlockFilter=null]])
+11-19 18:44:20.197  1015  1035 D BtGatt.ScanManager: startScan()  [ScanClient scanModeApp 2 scanModeUsed 2 [appScanStats io.github.ddedlish.glance]]
+11-19 18:44:20.197  1015  1035 D ActivityAttributionService: notifyActivityAttributionInfo UID=1002 packageName=com.google.android.bluetooth deviceAddress=no_active_device_address
+11-19 18:44:20.197  1015  1035 I bt_btif : packages/modules/Bluetooth/system/btif/src/bluetooth.cc:829 get_profile_interface: get_profile_interface: id = activity_attribution
+11-19 18:44:20.197  1015  1297 D BtGatt.ScanManager: handling starting scan
+11-19 18:44:20.197  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(268)] ScanFilterEnable in shim layer
+11-19 18:44:20.197  1015  1252 D BtGatt.GattService: onScanFilterEnableDisabled() - clientIf=3, status=0, action=1
+11-19 18:44:20.197  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 3 status - 0
+11-19 18:44:20.197  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(243)] ScanFilterAdd in shim layer
+11-19 18:44:20.197  1015  1252 D BtGatt.GattService: onScanFilterConfig() - clientIf=3, action = 0 status = 0, filterType=0, availableSpace=0
+11-19 18:44:20.197  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 3 status - 0
+11-19 18:44:20.197  1015  1297 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0
+11-19 18:44:20.197  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(204)] ScanFilterParamSetup in shim layer
+11-19 18:44:20.197  1015  1252 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=3, status=0, action=0, availableSpace=0
+11-19 18:44:20.197  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 3 status - 0
+11-19 18:44:20.197  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(243)] ScanFilterAdd in shim layer
+11-19 18:44:20.197  1015  1252 D BtGatt.GattService: onScanFilterConfig() - clientIf=3, action = 0 status = 0, filterType=0, availableSpace=0
+11-19 18:44:20.197  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 3 status - 0
+11-19 18:44:20.197  1015  1297 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0
+11-19 18:44:20.197  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(204)] ScanFilterParamSetup in shim layer
+11-19 18:44:20.197  1015  1252 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=3, status=0, action=0, availableSpace=0
+11-19 18:44:20.197  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 3 status - 0
+11-19 18:44:20.197  1015  1297 D BtGatt.ScanManager: start gattClientScanNative from startRegularScan()
+11-19 18:44:20.197  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(168)] Scan in shim layer started
+11-19 18:44:20.197  1015  1297 D BtGatt.ScanManager: configureRegularScanParams() - queue=3
+11-19 18:44:20.198  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(168)] Scan in shim layer stopped
+11-19 18:44:20.198  1015  1297 D BtGatt.ScanManager: Start gattClientScanNative with old scanMode -1 new scanMode 2 ( in MS: 100 / 100, in scan unit: 160 / 160 ) [ScanClient scanModeApp 2 scanModeUsed 2 [appScanStats io.github.ddedlish.glance]]
+11-19 18:44:20.198  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(346)] SetScanParameters in shim layer
+11-19 18:44:20.198  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_scanning_manager.cc:588 stop_scan: Scanning already stopped, return!
+11-19 18:44:20.198  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(168)] Scan in shim layer started
+11-19 18:44:20.198  1015  1297 D BtGatt.ScanManager: apply scan timeout (300000)to scannerId 3
+11-19 18:44:20.198  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_address_manager.cc:175 register_client: Scheduled address rotation for first client registered
+11-19 18:44:20.198  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_address_manager.cc:178 register_client: Client registered
+11-19 18:44:20.198  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_address_manager.cc:193 unregister_client: Client unregistered
+11-19 18:44:20.198  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_address_manager.cc:197 unregister_client: Cancelled address rotation alarm
+11-19 18:44:20.198  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_scanning_manager.cc:588 stop_scan: Scanning already stopped, return!
+11-19 18:44:20.198  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_address_manager.cc:175 register_client: Scheduled address rotation for first client registered
+11-19 18:44:20.198  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_address_manager.cc:178 register_client: Client registered
+11-19 18:44:20.198  1015  1252 D BtGatt.GattService: onScanParamSetupCompleted : 0
+11-19 18:44:20.199   519  2021 I ActivityManager: Background started FGS: Allowed [callingPackage: io.github.ddedlish.glance; callingUid: 10192; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.github.ddedlish.glance/.GlanceService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-19 18:44:20.200  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_scanning_manager.cc:1369 on_advertising_filter_complete: Got a Command complete LE_ADV_FILTER, status UNKNOWN_CONNECTION
+11-19 18:44:20.203  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_scanning_manager.cc:1369 on_advertising_filter_complete: Got a Command complete LE_ADV_FILTER, status UNKNOWN_CONNECTION
+11-19 18:44:20.204  6853  6853 D CompatibilityChangeReporter: Compat change id reported: 237531167; UID 10192; state: DISABLED
+11-19 18:44:20.204  6853  6853 W OpenGLRenderer: Unknown dataspace 0
+11-19 18:44:20.214  6853  6853 D CompatibilityChangeReporter: Compat change id reported: 160794467; UID 10192; state: ENABLED
+11-19 18:44:20.229   519  2861 D CompatibilityChangeReporter: Compat change id reported: 170668199; UID 10192; state: ENABLED
+11-19 18:44:20.233  6853  6853 D BluetoothAdapter: isLeEnabled(): ON
+11-19 18:44:20.234  1015  1035 D BtGatt.GattService: registerScanner() - UUID=ece40466-e963-4634-afe4-a1949dfe428d
+11-19 18:44:20.234  1015  1035 I bt_stack: [INFO:le_scanning_manager.cc(155)] RegisterScanner in shim layer
+11-19 18:44:20.234  1015  1252 D BtGatt.GattService: onScannerRegistered() - UUID=ece40466-e963-4634-afe4-a1949dfe428d, scannerId=4, status=0
+11-19 18:44:20.234  6853  6869 D BluetoothLeScanner: onScannerRegistered() - status=0 scannerId=4 mScannerId=0
+11-19 18:44:20.235  1015  1035 D BtGatt.GattService: start scan with filters
+11-19 18:44:20.235  1015  1035 D BtGatt.GattService: enforcePrivilegedPermissionIfNeeded([BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=null, mServiceData=null, mServiceDataMask=null, mManufacturerId=76, mManufacturerData=[], mManufacturerDataMask=null, mAdvertisingDataType=-1, mAdvertisingData=null, mAdvertisingDataMask=null, mTransportBlockFilter=null], BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=0000fe2c-0000-1000-8000-00805f9b34fb, mServiceData=[], mServiceDataMask=null, mManufacturerId=-1, mManufacturerData=null, mManufacturerDataMask=null, mAdvertisingDataType=-1, mAdvertisingData=null, mAdvertisingDataMask=null, mTransportBlockFilter=null]])
+11-19 18:44:20.236  1015  1035 D BtGatt.ScanManager: startScan()  [ScanClient scanModeApp 2 scanModeUsed 2 [appScanStats io.github.ddedlish.glance]]
+11-19 18:44:20.236  1015  1035 D ActivityAttributionService: notifyActivityAttributionInfo UID=1002 packageName=com.google.android.bluetooth deviceAddress=no_active_device_address
+11-19 18:44:20.236  1015  1035 I bt_btif : packages/modules/Bluetooth/system/btif/src/bluetooth.cc:829 get_profile_interface: get_profile_interface: id = activity_attribution
+11-19 18:44:20.236  1015  1297 D BtGatt.ScanManager: handling starting scan
+11-19 18:44:20.236  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(268)] ScanFilterEnable in shim layer
+11-19 18:44:20.236  1015  1252 D BtGatt.GattService: onScanFilterEnableDisabled() - clientIf=4, status=0, action=1
+11-19 18:44:20.236  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 4 status - 0
+11-19 18:44:20.236  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(243)] ScanFilterAdd in shim layer
+11-19 18:44:20.236  1015  1252 D BtGatt.GattService: onScanFilterConfig() - clientIf=4, action = 0 status = 0, filterType=0, availableSpace=0
+11-19 18:44:20.236  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 4 status - 0
+11-19 18:44:20.236  1015  1297 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0
+11-19 18:44:20.236  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(204)] ScanFilterParamSetup in shim layer
+11-19 18:44:20.237  1015  1252 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=4, status=0, action=0, availableSpace=0
+11-19 18:44:20.237  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 4 status - 0
+11-19 18:44:20.237  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(243)] ScanFilterAdd in shim layer
+11-19 18:44:20.237  1015  1252 D BtGatt.GattService: onScanFilterConfig() - clientIf=4, action = 0 status = 0, filterType=0, availableSpace=0
+11-19 18:44:20.237  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 4 status - 0
+11-19 18:44:20.237  1015  1297 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0
+11-19 18:44:20.237  1015  1297 I bt_stack: [INFO:le_scanning_manager.cc(204)] ScanFilterParamSetup in shim layer
+11-19 18:44:20.237  1015  1252 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=4, status=0, action=0, availableSpace=0
+11-19 18:44:20.237  1015  1252 D BtGatt.ScanManager: callback done for scannerId - 4 status - 0
+11-19 18:44:20.237  1015  1297 D BtGatt.ScanManager: configureRegularScanParams() - queue=4
+11-19 18:44:20.237  1015  1297 D BtGatt.ScanManager: apply scan timeout (300000)to scannerId 4
+11-19 18:44:20.239  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_scanning_manager.cc:1369 on_advertising_filter_complete: Got a Command complete LE_ADV_FILTER, status UNKNOWN_CONNECTION
+11-19 18:44:20.240  1015  1228 I bluetooth: packages/modules/Bluetooth/system/gd/hci/le_scanning_manager.cc:1369 on_advertising_filter_complete: Got a Command complete LE_ADV_FILTER, status UNKNOWN_CONNECTION
+11-19 18:44:20.242  6853  6853 I Glance  : shade: Нет подключённых аксессуаров Подключите наушники, часы или геймпад  False L
+11-19 18:44:20.243   519   968 D CoreBackPreview: Window{7f5d945 u0 io.github.ddedlish.glance/io.github.ddedlish.glance.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@29d94d8, mPriority=0, mIsAnimationCallback=false}
+11-19 18:44:20.255  6853  6874 W OpenGLRenderer: Failed to initialize 101010-2 format, error = EGL_SUCCESS
+11-19 18:44:20.263   135   135 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-19 18:44:20.264  6853  6874 I Gralloc4: mapper 4.x is not supported
+--------- beginning of kernel
+11-19 18:44:20.453     0     0 I servicemanager: Could not find android.hardware.graphics.allocator.IAllocator/default in the VINTF manifest.
+11-19 18:44:20.282  6853  6853 I Glance  : drawn: 0 devices, paired=0, demo=False
+11-19 18:44:20.432   519   519 W NotificationHistory: Attempted to add notif for locked/gone/disabled user 0
+11-19 18:44:20.434  1563  1907 W AiAiEcho: LyftNotificationParser Ridesharing ETA not enabled
+11-19 18:44:20.434  1563  1907 W AiAiEcho: SmartspaceNotificationPredictor no parser can handle this notification or notification is invalid
+11-19 18:44:20.442  1563  1907 W AiAiEcho: LyftNotificationParser Ridesharing ETA not enabled
+11-19 18:44:20.442  1563  1907 W AiAiEcho: SmartspaceNotificationPredictor no parser can handle this notification or notification is invalid
+11-19 18:44:21.043  6853  6853 I Choreographer: Skipped 47 frames!  The application may be doing too much work on its main thread.
+11-19 18:44:21.049   519   536 I ActivityTaskManager: Displayed io.github.ddedlish.glance/.MainActivity for user 0: +1s77ms
+11-19 18:44:21.050   519   539 W ProcessStats: Tracking association SourceState{7c9ac43 android.process.acore/10087 BFgs #12146} whose proc state 4 is better than process ProcessState{6cc697a com.google.android.contacts/10154 pkg=com.google.android.contacts} proc state 13 (1647 skipped)
+11-19 18:44:21.056  6853  6866 I OpenGLRenderer: Davey! duration=832ms; Flags=1, FrameTimelineVsyncId=33124, IntendedVsync=150994391034, Vsync=151011057700, InputEventId=0, HandleInputStart=151019238237, AnimationStart=151019238718, PerformTraversalsStart=151019238838, DrawStart=151051098615, FrameDeadline=151011057700, FrameInterval=151019231317, FrameStartTime=16666666, SyncQueued=151060465573, SyncStart=151060644345, IssueDrawCommandsStart=151060980134, SwapBuffers=151743740295, FrameCompleted=151826999640, DequeueBufferDuration=2634, QueueBufferDuration=185245, GpuCompleted=151826999640, SwapBuffersCompleted=151819356831, DisplayPresentTime=0, CommandSubmissionCompleted=151743740295, 
+11-19 18:44:21.058   519   897 D CompatibilityChangeReporter: Compat change id reported: 214016041; UID 10192; state: ENABLED
+11-19 18:44:21.058   825   877 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=falsecallback=android.view.ViewRootImpl$$ExternalSyntheticLambda17@d786a1b
+11-19 18:44:21.059   519   897 I ImeTracker: io.github.ddedlish.glance:fef08ac0: onRequestHide at ORIGIN_SERVER_HIDE_INPUT reason HIDE_UNSPECIFIED_WINDOW
+11-19 18:44:21.059   519   897 I ImeTracker: io.github.ddedlish.glance:fef08ac0: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-19 18:44:21.059   519   968 D CoreBackPreview: Window{4589f7e u0 Splash Screen io.github.ddedlish.glance EXITING}: Setting back callback null
+11-19 18:44:21.059   519  2861 W InputManager-JNI: Input channel object '4589f7e Splash Screen io.github.ddedlish.glance (client)' was disposed without first being removed with the input manager!
+11-19 18:44:21.063  1501  1501 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3227 
+11-19 18:44:21.063  1501  1501 I GoogleInputMethodService: GoogleInputMethodService.updateDeviceLockedStatus():2087 repeatCheckTimes = 0, unlocked = true
+11-19 18:44:21.063  1501  1501 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1877 onStartInput(EditorInfo{inputType=0x0(NULL) imeOptions=0x0 privateImeOptions=null actionName=UNSPECIFIED actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=io.github.ddedlish.glance fieldId=0 fieldName=null extras=null}, false)
+11-19 18:44:21.064  1501  1501 I GoogleInputMethodService: GoogleInputMethodService.shouldHideHeaderOnInitialState():4008 ShouldHideHeaderOnInitialState = false
+11-19 18:44:21.064  1501  1501 I GoogleInputMethodService: GoogleInputMethodService.updateDeviceLockedStatus():2087 repeatCheckTimes = 2, unlocked = true
+11-19 18:44:21.065   519   605 D ActivityManager: freezing 2198 android.process.media
+11-19 18:44:21.090   825   901 D EGL_emulation: app_time_stats: avg=179.77ms min=4.05ms max=531.09ms count=6
+11-19 18:44:21.834   825   825 D StatusBarIconController: ignoring old pipeline callback because the new wifi icon is enabled
+11-19 18:44:22.057  6853  6874 D EGL_emulation: app_time_stats: avg=4.55ms min=3.50ms max=12.56ms count=62
+11-19 18:44:23.139   519   605 D ActivityManager: freezing 3744 com.google.android.rkpdapp
+11-19 18:44:23.647   156  6731 I keystore2: system/security/keystore2/src/watchdog.rs:319 - Watchdog thread idle -> terminating. Have a great day.
+11-19 18:44:23.939   519  2021 D OomAdjuster: Not killing cached processes
+11-19 18:44:23.986   519  2920 E TaskPersister: File error accessing recents directory (directory doesn't exist?).
+11-19 18:44:24.082   335   365 I netd    : setProcSysNet(4, 2, wlan0, retrans_time_ms, 750) <0.05ms>
+11-19 18:44:24.082   335   365 I netd    : setProcSysNet(4, 2, wlan0, ucast_solicit, 10) <0.01ms>
+11-19 18:44:24.083   335   365 I netd    : setProcSysNet(6, 2, wlan0, retrans_time_ms, 750) <0.06ms>
+11-19 18:44:24.083   335   365 I netd    : setProcSysNet(6, 2, wlan0, ucast_solicit, 10) <0.03ms>
+11-19 18:44:25.123  6887  6887 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-19 18:44:25.123  6887  6887 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-19 18:44:25.128   135   135 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-19 18:44:25.128  6887  6888 I Gralloc4: mapper 4.x is not supported
+11-19 18:44:25.318     0     0 I servicemanager: Could not find android.hardware.graphics.allocator.IAllocator/default in the VINTF manifest.
+11-19 18:44:25.381     0     0 I logd    : logdr: UID=2000 GID=2000 PID=6889 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+11-19 18:44:25.393     0     0 I logd    : logdr: UID=2000 GID=2000 PID=6892 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
