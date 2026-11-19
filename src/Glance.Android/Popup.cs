@@ -88,7 +88,16 @@ internal sealed class PopupView : View
         bool dark = ((c.Resources.Configuration?.UiMode ?? UiMode.NightNo) & UiMode.NightMask) == UiMode.NightYes;
         _p = Palette.For(dark);
         _hideAt = _t0 + ShowMs;
+        Watchdog();
     }
+
+    /// <summary>Removes the card even if Android stops sending frames to it (screen off, app in background).</summary>
+    void Watchdog() => PostDelayed(() =>
+    {
+        if (!IsAttachedToWindow) return;
+        if (Now >= _hideAt + 1200 && _hideAt != long.MaxValue) _remove();
+        else { Invalidate(); Watchdog(); }
+    }, 1000);
 
     /// <summary>Shown again for the same device (reconnect, case opened): stay longer and wobble.</summary>
     public void Bump()
@@ -104,7 +113,8 @@ internal sealed class PopupView : View
     float Tween(string key, float target)
     {
         long now = Now;
-        if (!_tw.TryGetValue(key, out var t)) { t = (0, target, now + 180); _tw[key] = t; }
+        // counted from the card's creation, so even a late first frame shows the right numbers
+        if (!_tw.TryGetValue(key, out var t)) { t = (0, target, _t0 + 250); _tw[key] = t; }
         else if (Math.Abs(t.To - target) > 0.01f) { t = (Val(t, now), target, now); _tw[key] = t; }
         return Val(t, now);
     }
