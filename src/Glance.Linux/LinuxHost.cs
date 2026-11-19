@@ -149,7 +149,9 @@ internal sealed class LinuxHost
     {
         if (a.Level is not int l) return "";
         var e = _h.Estimate(a.Key, l, a.Charging);
-        return e is TimeSpan t ? (a.Charging ? $"\nДо 100% ≈ {Fmt.Duration(t)}" : $"\nХватит ≈ на {Fmt.Duration(t)}") : "";
+        if (e is not TimeSpan t) return "";
+        string at = Fmt.ClockAt(t) is string clock ? (a.Charging ? $" · к {clock}" : $" · до {clock}") : "";
+        return (a.Charging ? $"\nДо 100% ≈ {Fmt.Duration(t)}" : $"\nХватит ≈ на {Fmt.Duration(t)}") + at;
     }
 
     Canvas Big(Accessory a) => BatteryArt.Render(64, a.Level, a.Charging, IconStyle.Battery, _s.LowBatteryThreshold);

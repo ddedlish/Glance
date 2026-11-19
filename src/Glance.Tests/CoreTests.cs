@@ -177,6 +177,38 @@ public class HistoryTests
         Assert.Null(h.Estimate(key, 49, false));
         h.Remove(key);
     }
+
+    [Fact]
+    public void Just_connected_device_uses_rate_learned_on_past_days()
+    {
+        var h = new HistoryStore();
+        string key = "TEST:" + Guid.NewGuid();
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        // yesterday: 100 → 40 in 6 h (10 %/h), then charged 40 → 100 in 1.5 h (40 %/h)
+        h.AddRaw(key, new Sample(now - 30 * 3600, 100, Sample.SessionStart));
+        for (int k = 1; k <= 6; k++) h.AddRaw(key, new Sample(now - 30 * 3600 + k * 3600, (byte)(100 - 10 * k), 0));
+        h.AddRaw(key, new Sample(now - 23 * 3600, 40, Sample.Charging));
+        h.AddRaw(key, new Sample(now - 23 * 3600 + 5400, 100, Sample.Charging));
+        // today: just reconnected at 50 %
+        h.AddRaw(key, new Sample(now - 60, 50, Sample.SessionStart));
+
+        var e = h.Estimate(key, 50, charging: false);
+        Assert.NotNull(e);
+        Assert.InRange(e!.Value.TotalHours, 4.5, 5.5); // 50 % at 10 %/h
+        var c = h.Estimate(key, 50, charging: true);
+        Assert.NotNull(c);
+        Assert.InRange(c!.Value.TotalMinutes, 65, 85); // 50 % at 40 %/h ≈ 75 min
+        h.Remove(key);
+    }
+
+    [Fact]
+    public void Clock_time_of_estimate()
+    {
+        var n = new DateTime(2026, 11, 19, 20, 0, 0);
+        Assert.Equal("21:40", Fmt.ClockAt(TimeSpan.FromMinutes(100), n));
+        Assert.Equal("завтра 09:10", Fmt.ClockAt(TimeSpan.FromHours(13) + TimeSpan.FromMinutes(10), n));
+        Assert.Null(Fmt.ClockAt(TimeSpan.FromHours(40), n));
+    }
 }
 
 public class FormatTests

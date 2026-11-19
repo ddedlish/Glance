@@ -57,7 +57,8 @@ internal sealed class HistoryStore
 
     /// <summary>
     /// Time until empty (discharging) or full (charging), from a least-squares fit over the
-    /// current monotonic segment of the current session. Null when data is insufficient.
+    /// current monotonic segment of the current session; until that has enough data, from the
+    /// device's typical rate learned over past days. Null when data is insufficient.
     /// </summary>
     public TimeSpan? Estimate(string key, int level, bool charging)
     {
@@ -83,6 +84,24 @@ internal sealed class HistoryStore
             prev = x.L;
             if (x.IsSessionStart) break;
         }
+        if (LiveSlope(xs, ys) is double slope) // % per hour
+        {
+            double hours = charging ? (slope > 0.1 ? (100 - level) / slope : -1) : (slope < -0.1 ? level / -slope : -1);
+            if (hours > 0 && hours <= 300) return TimeSpan.FromHours(hours);
+        }
+
+        // Not enough data in this session yet (just connected, or the level hasn't moved):
+        // fall back to how fast this very device usually drains / charges, learned from past days.
+        if (TypicalRate(key, charging) is double rate)
+        {
+            double hours = (charging ? 100 - level : level) / rate;
+            if (hours > 0 && hours <= 300) return TimeSpan.FromHours(hours);
+        }
+        return null;
+    }
+
+    static double? LiveSlope(List<double> xs, List<double> ys)
+    {
         if (xs.Count < 2) return null;
         double span = xs[0] - xs[^1];
         double delta = Math.Abs(ys[0] - ys[^1]);
@@ -91,10 +110,47 @@ internal sealed class HistoryStore
         double mx = xs.Average(), my = ys.Average(), num = 0, den = 0;
         for (int i = 0; i < xs.Count; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) * (xs[i] - mx); }
         if (den <= 0) return null;
-        double slope = num / den; // % per hour
-        double hours = charging ? (slope > 0.1 ? (100 - level) / slope : -1) : (slope < -0.1 ? level / -slope : -1);
-        if (hours <= 0 || hours > 300) return null;
-        return TimeSpan.FromHours(hours);
+        return num / den;
+    }
+
+    readonly Dictionary<(string, bool), (int Count, long LastT, double? Rate)> _rateCache = new();
+
+    /// <summary>
+    /// The device's usual speed in % per hour (positive), discharging or charging, from the monotonic
+    /// segments of the last 30 days weighted by their length. Null until about an hour of history exists.
+    /// </summary>
+    public double? TypicalRate(string key, bool charging)
+    {
+        var s = Get(key);
+        if (s.Count < 2) return null;
+        if (_rateCache.TryGetValue((key, charging), out var c) && c.Count == s.Count && c.LastT == s[^1].T) return c.Rate;
+
+        long from = Now - 30L * 24 * 3600;
+        double hours = 0, percent = 0;
+        int i = 0;
+        while (i < s.Count)
+        {
+            // one segment: same direction, monotonic, no reconnect and no long silent gap inside
+            int j = i;
+            while (j + 1 < s.Count)
+            {
+                var a = s[j]; var b = s[j + 1];
+                if (b.IsSessionStart || b.IsCharging != a.IsCharging || b.T - a.T > 6 * 3600 || b.T < a.T) break;
+                if (a.IsCharging ? b.L < a.L : b.L > a.L) break;
+                j++;
+            }
+            var first = s[i]; var last = s[j];
+            if (first.IsCharging == charging && first.T >= from && j > i)
+            {
+                double h = (last.T - first.T) / 3600.0, d = Math.Abs(last.L - first.L);
+                if (h >= 0.25 && d >= 3) { hours += h; percent += d; }
+            }
+            i = j + 1;
+        }
+        double? rate = hours >= 1 && percent >= 10 ? percent / hours : null;
+        if (rate is < 0.2 or > 400) rate = null;
+        _rateCache[(key, charging)] = (s.Count, s[^1].T, rate);
+        return rate;
     }
 
     void ScheduleSave() => (_saver ??= new Debouncer(30_000, SaveNow)).TriggerOnce();

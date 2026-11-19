@@ -305,12 +305,28 @@ internal sealed class FlyoutForm : CardForm
         float tx = ring.Right + 18 * s, tw = r.Right - tx - 14 * s;
         Painter.Glyph(g, Glyphs.For(a.Kind), 13 * s, a.Profile.BrandColor ?? t.AccentText, new RectangleF(tx - 2 * s, r.Y + 18 * s, 18 * s, 22 * s));
         Painter.Text(g, a.DisplayName, Fonts.Strong(15 * s), t.Text, new RectangleF(tx + 20 * s, r.Y + 18 * s, tw - 20 * s, 22 * s));
-        string line = a.Charging
-            ? (Svc.Estimate(a) is TimeSpan c ? $"Заряжается · до полного ~{Fmt.Duration(c)}" : "Заряжается")
-            : (Svc.Estimate(a) is TimeSpan e ? $"Хватит примерно на {Fmt.Duration(e)}" : "Считаем, на сколько хватит…");
-        Painter.Text(g, line, Fonts.Regular(13 * s), t.Text, new RectangleF(tx, r.Y + 46 * s, tw, 20 * s));
+        var lineFont = Fonts.Regular(13 * s);
+        Painter.Text(g, HeroLine(g, a, lineFont, tw), lineFont, t.Text, new RectangleF(tx, r.Y + 46 * s, tw, 20 * s));
         string hint = a.Charging ? a.Link : lvl <= Svc.Low ? "Пора зарядить" : lvl <= 40 ? $"{a.Link} · разрядится первым" : $"{a.Link} · всё в порядке";
         Painter.Text(g, hint, Fonts.Regular(12 * s), lvl <= Svc.Low && !a.Charging ? Theme.VividRed : t.SubText, new RectangleF(tx, r.Y + 70 * s, tw, 18 * s));
+    }
+
+    /// <summary>
+    /// «Хватит примерно на 1 ч 50 мин · до 21:40» — the estimate with the wall-clock moment it runs out (or is full),
+    /// shortened step by step until it fits the card.
+    /// </summary>
+    static string HeroLine(Graphics g, Accessory a, Font f, float width)
+    {
+        if (Svc.Estimate(a) is not TimeSpan e)
+            return a.Charging ? "Заряжается" : "Считаем, на сколько хватит…";
+        string dur = Fmt.Duration(e);
+        string? at = Fmt.ClockAt(e);
+        var options = a.Charging
+            ? new[] { at is null ? null : $"До 100% ~{dur} · к {at}", at is null ? null : $"Заряжается · 100% к {at}", $"Заряжается · до полного ~{dur}" }
+            : new[] { at is null ? null : $"Хватит примерно на {dur} · до {at}", at is null ? null : $"Хватит на {dur} · до {at}", $"Хватит примерно на {dur}" };
+        foreach (var o in options)
+            if (o is not null && Painter.Width(g, o, f) <= width) return o;
+        return options[^1]!;
     }
 
     // ───────────── Liquid inside the hero ring ─────────────

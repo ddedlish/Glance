@@ -135,7 +135,11 @@ internal sealed class ToastForm : CardForm
     {
         if (Device is not Accessory a) return null;
         if (!a.Connected) return "Устройство отключено";
-        if (Svc.Estimate(a) is TimeSpan e) return a.Charging ? $"До полного заряда примерно {Fmt.Duration(e)}" : $"Хватит примерно на {Fmt.Duration(e)}";
+        if (Svc.Estimate(a) is TimeSpan e)
+        {
+            string at = Fmt.ClockAt(e) is string clock ? (a.Charging ? $" · 100% к {clock}" : $" · до {clock}") : "";
+            return (a.Charging ? $"До полного заряда примерно {Fmt.Duration(e)}" : $"Хватит примерно на {Fmt.Duration(e)}") + at;
+        }
         if (a.BudsPending) return "Получаем заряд каждого наушника…";
         if (a.Wired) return "Подключено по USB-кабелю";
         if (a.ViaReceiver && a.Level is null) return "Через приёмник 2.4 ГГц · устройство не передаёт заряд";

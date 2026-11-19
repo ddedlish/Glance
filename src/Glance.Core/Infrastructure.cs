@@ -205,6 +205,21 @@ internal static class Fmt
         return m == 0 ? $"{h} ч" : $"{h} ч {m} мин";
     }
 
+    /// <summary>Wall-clock moment «in t from now»: «21:40», «завтра 09:10»; null when farther than tomorrow.</summary>
+    public static string? ClockAt(TimeSpan t, DateTime? now = null)
+    {
+        var n = now ?? DateTime.Now;
+        if (t < TimeSpan.Zero || t > TimeSpan.FromHours(36)) return null;
+        var at = n + t;
+        int days = (at.Date - n.Date).Days;
+        return days switch
+        {
+            0 => at.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+            1 => "завтра " + at.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+            _ => null,
+        };
+    }
+
     public static string Size(long bytes) => bytes switch
     {
         >= 1L << 40 => $"{bytes / (double)(1L << 40):0.#} ТБ",

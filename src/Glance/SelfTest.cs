@@ -45,6 +45,7 @@ internal sealed partial class AppHost
         try
         {
             Note($"Glance {AppInfo.VersionText}, Windows {Environment.OSVersion.Version}, экран {Screen.PrimaryScreen?.Bounds.Size}");
+            SeedDemoHistory();
             foreach (var a in DemoDevices()) _r.AddDemo(a);
             SyncTray();
 
@@ -98,6 +99,28 @@ internal sealed partial class AppHost
         try { File.WriteAllText(Path.Combine(dir, "report.txt"), report.ToString(), Encoding.UTF8); } catch { }
         SelfTestExitCode = errors == 0 ? 0 : 1;
         ExitApp();
+    }
+
+    /// <summary>
+    /// Yesterday's sessions of the demo devices, so the panel and the toast show the forecast learned from
+    /// past days («Хватит примерно на 1 ч 48 мин · до 21:40») right after connecting.
+    /// </summary>
+    void SeedDemoHistory()
+    {
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), day = now - 26 * 3600;
+        void Run(string key, int from, int to, double hours, bool charging)
+        {
+            int steps = Math.Max(1, Math.Abs(to - from) / 5);
+            for (int k = 0; k <= steps; k++)
+            {
+                byte f = (byte)((charging ? Sample.Charging : 0) | (k == 0 && !charging ? Sample.SessionStart : 0));
+                _h.AddRaw(key, new Sample(day + (long)(hours * 3600 * k / steps), (byte)(from + (to - from) * k / steps), f));
+            }
+        }
+        Run("DEMO:mouse", 100, 40, 6, false);   // 10 %/h → 18 % ≈ 1 ч 48 мин
+        Run("DEMO:buds", 100, 60, 5, false);    // 8 %/h
+        Run("DEMO:pad", 90, 50, 4, false);      // 10 %/h
+        Run("DEMO:kbd", 30, 90, 2, true);       // 30 %/h → 87 % → full in ≈ 26 мин
     }
 
     static string Slug(string s) => new(s.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
