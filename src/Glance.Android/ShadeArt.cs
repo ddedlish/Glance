@@ -136,7 +136,7 @@ internal static class ShadeArt
 
         float tx = tile.Right + x.Dp(10);
         bool buds = a.HasParts;
-        float rightW = buds ? 3 * 34 + 4 : 86;
+        float rightW = buds ? 3 * 30 + 4 : 70;
         float textW = (r.Width() / x.S) - (tx - r.Left) / x.S - rightW - 8;
         Text(x, a.DisplayName, tx, r.CenterY() - x.Dp(2), 14, x.P.Text, true, textW);
         string sub = a.Charging ? "Заряжается" : lvl is null ? $"{a.Link} · заряд не передаётся" : a.Link;
@@ -148,7 +148,7 @@ internal static class ShadeArt
             var parts = new[] { ("Л", a.Left), ("П", a.Right), ("К", a.Case) };
             for (int k = 0; k < 3; k++)
             {
-                float cx = r.Right - x.Dp(10 + 15 + (2 - k) * 34);
+                float cx = r.Right - x.Dp(9 + 14 + (2 - k) * 30);
                 var (label, part) = parts[k];
                 LiquidRing(x, cx, r.CenterY() - x.Dp(4), x.Dp(13), part.Level, part.Charging, x.Dp(2.4f), 9.5f, index * 2.1f + k * 1.7f);
                 TextCentered(x, label, cx, r.CenterY() + x.Dp(19), 9.5f, x.P.Sub, true);
@@ -165,7 +165,7 @@ internal static class ShadeArt
                 float pw = tp.MeasureText(pct);
                 Icons.Bolt(c, new RectF(right - pw - x.Dp(17), r.CenterY() - x.Dp(12), right - pw - x.Dp(3), r.CenterY() + x.Dp(2)), Palette.Green);
             }
-            var bar = new RectF(right - x.Dp(64), r.CenterY() + x.Dp(9), right, r.CenterY() + x.Dp(16));
+            var bar = new RectF(right - x.Dp(56), r.CenterY() + x.Dp(9), right, r.CenterY() + x.Dp(16));
             LiquidBar(x, bar, lvl, col, a.Charging, index * 1.9f);
         }
     }

@@ -440,9 +440,9 @@ public sealed class GlanceService : Service
             // when collapsed); before that only the card padding. Drawn to this width, the picture is not scaled down.
             float sw = res.Configuration?.ScreenWidthDp ?? 360;
             bool s31 = OperatingSystem.IsAndroidVersionAtLeast(31);
-            float w = Math.Clamp(s31 ? sw * 0.69f : sw - 64, 220, 440);
-            float wSmall = Math.Clamp(s31 ? w - 36 : w, 200, 440);
-            string head = all.Count == 0 ? "Glance следит за зарядом" : $"Аксессуары: {all.Count} · {text}";
+            float w = Math.Clamp(s31 ? sw * 0.6f : sw - 64, 210, 440);
+            float wSmall = Math.Clamp(s31 ? w - 30 : w, 190, 440);
+            string head = all.Count == 0 ? "Glance следит за зарядом" : text;
             string a11y = all.Count == 0 ? text : string.Join("; ", all.Select(Line));
 
             var small = new Android.Widget.RemoteViews(PackageName, layout);
