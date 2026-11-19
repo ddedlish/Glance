@@ -199,7 +199,7 @@ internal static class Updater
         long ours = OperatingSystem.IsAndroidVersionAtLeast(28) ? mine.LongVersionCode : mine.VersionCode;
 #pragma warning restore CS0618, CA1422
         Android.Util.Log.Info("Glance", $"update: verify {info.PackageName} {info.VersionName} ({theirs}) over {ours}");
-        if (theirs <= ours) throw new InvalidDataException($"Версия {info.VersionName} не новее установленной");
+        if (theirs <= ours) throw new InvalidDataException($"{info.VersionName} не новее этой");
     }
 
     /// <summary>Hands the checked APK to PackageInstaller; asks for «Установка неизвестных приложений» first if needed.</summary>

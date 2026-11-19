@@ -614,7 +614,7 @@ internal sealed class SettingsView : GlassView
 
         // three link rows: the author's profile, a donation, the source code
         LinkRow(c, r, r.Top + Dp(84), "Автор — ddedlish", "Профиль в Steam", AColor.Argb(255, 102, 192, 244), Glyph.Person);
-        LinkRow(c, r, r.Top + Dp(136), "Поддержать автора", "Пожертвование на Boosty, по желанию", AColor.Argb(255, 255, 94, 135), Glyph.Heart);
+        LinkRow(c, r, r.Top + Dp(136), "Поддержать автора", "Boosty, любая сумма", AColor.Argb(255, 255, 94, 135), Glyph.Heart);
         LinkRow(c, r, r.Top + Dp(188), "Исходный код", "GitHub · ddedlish/Glance", _p.Accent, Glyph.Code);
     }
 
