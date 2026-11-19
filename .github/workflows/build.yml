@@ -97,13 +97,13 @@ jobs:
           git add -A
           git commit -q -m "Self-test ${{ needs.version.outputs.v }} (${{ github.sha }})"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" selftest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && matrix.rid == 'win-x64'
         with:
           name: selftest
           path: selftest/
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Glance-${{ matrix.rid }}
           path: dist/*
@@ -128,7 +128,7 @@ jobs:
           mkdir dist
           cp out/Glance "dist/Glance-${{ matrix.rid }}"
           chmod +x "dist/Glance-${{ matrix.rid }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Glance-${{ matrix.rid }}
           path: dist/*
@@ -225,13 +225,13 @@ jobs:
           git add -A
           git commit -q -m "Android self-test ${{ needs.version.outputs.av }} (${{ github.sha }})"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" selftest-android
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: selftest-android
           path: selftest-android/
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-apk
           path: dista/*
@@ -262,7 +262,7 @@ jobs:
         run: |
           sha256sum Glance-* > SHA256SUMS
           cat SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Glance-all
           path: artifacts/*
