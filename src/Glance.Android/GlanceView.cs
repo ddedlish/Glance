@@ -89,7 +89,16 @@ internal sealed class GlanceView : GlassView
 
     // ───────── layout ─────────
 
-    const float Gap = 12, HeroH = 148, CardH = 84, BudsH = 150, BannerH = 64;
+    const float Gap = 12, HeroH = 148, CardH = 84, BudsH = 150, BannerH = 64, PairedH = 64;
+
+    /// <summary>A tap on a paired device under «Можно подключить».</summary>
+    public event Action<string>? ConnectRequested;
+    readonly List<(RectF R, string Key)> _availR = new();
+    long _tapT0 = -10_000;
+    string? _tapKey;
+
+    IReadOnlyList<Accessory> Available() =>
+        _dev.MissingPermission || _dev.BluetoothOff || _dev.NoBluetooth ? Array.Empty<Accessory>() : _dev.Available;
 
     Accessory? Hero(IReadOnlyList<Accessory> list)
     {
@@ -107,6 +116,8 @@ internal sealed class GlanceView : GlassView
         if (Hero(list) is not null) y += HeroH + Gap + 28;
         if (list.Count == 0) y += 200;
         else y += 28 + list.Sum(a => (a.HasParts ? BudsH : CardH) + Gap);
+        int av = Available().Count;
+        if (av > 0) y += 28 + av * (PairedH + Gap);
         y += 40;
         return Dp(y) + BottomInset;
     }
@@ -232,9 +243,26 @@ internal sealed class GlanceView : GlassView
             }
         }
 
+        // paired devices that are not connected now: one tap connects them
+        var avail = Available();
+        _availR.Clear();
+        if (avail.Count > 0)
+        {
+            y += Dp(28);
+            Section(canvas, "Можно подключить", y);
+            foreach (var a in avail)
+            {
+                var r = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(PairedH));
+                var acc = a;
+                _availR.Add((r, a.Key));
+                Shift(canvas, idx++, () => DrawPaired(canvas, r, acc));
+                y += Dp(PairedH + Gap);
+            }
+        }
 
-        if (Animating || list.Any(a => a.Charging || a.HasParts && (a.Left.Charging || a.Right.Charging || a.Case.Charging)) || (hero?.Charging ?? false)) PostInvalidateOnAnimation();
-        if (!_drawnOnce) { _drawnOnce = true; Android.Util.Log.Info("Glance", $"drawn: {list.Count} devices, demo={_dev.Demo}"); }
+
+        if (Animating || _dev.Connecting is not null || Now - _tapT0 < 500 || list.Any(a => a.Charging || a.HasParts && (a.Left.Charging || a.Right.Charging || a.Case.Charging)) || (hero?.Charging ?? false)) PostInvalidateOnAnimation();
+        if (!_drawnOnce) { _drawnOnce = true; Android.Util.Log.Info("Glance", $"drawn: {list.Count} devices, paired={avail.Count}, demo={_dev.Demo}"); }
     }
 
     bool _drawnOnce;
@@ -257,6 +285,8 @@ internal sealed class GlanceView : GlassView
     float _updShown, _updHMeasured; // the water flows to the real progress instead of jumping
     long _updDoneT0;
 
+    static string SpeedPart() => Updater.SpeedText is { Length: > 0 } t ? " · " + t : "";
+
     UpdateStage UpdStage => Update is { } u && Updater.Target?.Version == u.Version ? Updater.Stage : UpdateStage.Idle;
 
     /// <summary>The update banner is taller while its water line is shown (downloading, downloaded, installing).</summary>
@@ -274,7 +304,7 @@ internal sealed class GlanceView : GlassView
         (string title, string sub, AColor tint) = st switch
         {
             UpdateStage.Downloading => ($"Скачивается версия {v}", Updater.Total > 0
-                ? $"{Updater.Mb(Updater.Done)} из {Updater.Mb(Updater.Total)} МБ · {(int)(Updater.Progress * 100)}%" : $"{Updater.Mb(Updater.Done)} МБ", Palette.Green),
+                ? $"{Updater.Mb(Updater.Done)} из {Updater.Mb(Updater.Total)} МБ · {(int)(Updater.Progress * 100)}%{SpeedPart()}" : $"{Updater.Mb(Updater.Done)} МБ{SpeedPart()}", Palette.Green),
             UpdateStage.Ready => ($"Версия {v} скачана", "Нажмите, чтобы установить", Palette.Green),
             UpdateStage.Installing => ($"Устанавливается {v}", $"{(int)(_updShown * 100)}% · Glance перезапустится сам", Palette.Green),
             UpdateStage.NeedPermission => ("Разрешите установку", "Glance → «Разрешить из этого источника»", Palette.Amber),
@@ -406,6 +436,65 @@ internal sealed class GlanceView : GlassView
         }
     }
 
+    /// <summary>
+    /// A paired device that is not connected: a quieter glass row with its tile, the last known level and a glass
+    /// «Подключить» pill; while connecting, a ring runs around the pill.
+    /// </summary>
+    void DrawPaired(Canvas c, RectF r, Accessory a)
+    {
+        bool busy = _dev.Connecting == a.Key;
+        float press = _tapKey == a.Key ? 1 - Ease((Now - _tapT0) / 450f) : 0;
+        if (press > 0)
+        {
+            c.Save();
+            float k = 1 - 0.025f * press;
+            c.Scale(k, k, r.CenterX(), r.CenterY());
+        }
+        Glass(c, r, Dp(20));
+        var tile = new RectF(r.Left + Dp(14), r.Top + Dp(12), r.Left + Dp(54), r.Bottom - Dp(12));
+        int save = c.SaveLayerAlpha(tile.Left - 1, tile.Top - 1, tile.Right + 1, tile.Bottom + 1, busy ? 255 : 170);
+        Tile(c, tile, a.Kind);
+        c.RestoreToCount(save);
+
+        // the pill on the right
+        using var tp = new Paint(PaintFlags.AntiAlias) { TextSize = Dp(13), FakeBoldText = true };
+        string label = busy ? "Подключение" : "Подключить";
+        float pw = tp.MeasureText(label) + Dp(26);
+        var pill = new RectF(r.Right - Dp(14) - pw, r.CenterY() - Dp(16), r.Right - Dp(14), r.CenterY() + Dp(16));
+        using (var pf = new Paint(PaintFlags.AntiAlias) { Color = Palette.Alpha(_p.Accent, _p.Dark ? 60 : 36) })
+            c.DrawRoundRect(pill, Dp(16), Dp(16), pf);
+        if (busy)
+        {
+            // a bright arc chasing around the pill while Android connects
+            using var arc = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Dp(2), Color = _p.Accent };
+            arc.SetStyle(Paint.Style.Stroke);
+            float t = Now % 1200 / 1200f;
+            using var path = new Path();
+            path.AddRoundRect(pill, Dp(16), Dp(16), Path.Direction.Cw!);
+            using var pm = new PathMeasure(path, false);
+            float len = pm.Length;
+            using var seg = new Path();
+            float from = t * len, to = from + len * 0.28f;
+            pm.GetSegment(from, Math.Min(to, len), seg, true);
+            if (to > len) pm.GetSegment(0, to - len, seg, true);
+            c.DrawPath(seg, arc);
+        }
+        TextCentered(c, label, pill.CenterX(), pill.CenterY() + Dp(4.5f), Dp(13), _p.Accent, true);
+
+        float tx = tile.Right + Dp(12), room = pill.Left - tx - Dp(10);
+        TextShrink(c, a.DisplayName, tx, r.Top + Dp(28), Dp(15), Dp(12.5f), _p.Text, true, room);
+        var pieces = new List<string>(3);
+        if (busy) pieces.Add("Подключаем…");
+        else
+        {
+            pieces.Add("Сопряжено");
+            if (a.LastLevel is int l) pieces.Add($"было {l}%");
+            else if (a.Profile.Brand.Length > 0) pieces.Add(a.Profile.Brand);
+        }
+        Text(c, Pieces(pieces, Dp(12.5f), room), tx, r.Top + Dp(47), Dp(12.5f), _p.Sub, maxW: room);
+        if (press > 0) c.Restore();
+    }
+
     void Banner(Canvas c, RectF r, string title, string sub, AColor tint, bool chevron)
     {
         Glass(c, r, Dp(20));
@@ -447,6 +536,7 @@ internal sealed class GlanceView : GlassView
         else
         {
             if (a.Charging) pieces.Add("Заряжается");
+            else if (_dev.Silent(a)) pieces.Add("Не сообщает заряд");
             pieces.Add(a.Link);
             pieces.AddRange(Profiles.Features(a.Profile).Split(" · ", StringSplitOptions.RemoveEmptyEntries));
         }
@@ -822,6 +912,14 @@ internal sealed class GlanceView : GlassView
                 else if (_updR.Contains(x, y)) UpdateRequested?.Invoke();
                 else if (_popR.Contains(x, y)) PopupPermissionRequested?.Invoke();
                 else if (_heroR.Contains(x, y)) Slosh(0.9f);
+                else if (_availR.FirstOrDefault(t => t.R.Contains(x, y)).Key is { } pk)
+                {
+                    _tapKey = pk;
+                    _tapT0 = Now;
+                    PerformHapticFeedback(FeedbackConstants.VirtualKey);
+                    ConnectRequested?.Invoke(pk);
+                    Invalidate();
+                }
                 else if (BudsAt(x, y) is { } tapped)
                 {
                     SloshCard(tapped, 0.8f);

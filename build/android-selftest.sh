@@ -78,6 +78,8 @@ bottom() { # name — scrolls the screen to the end (phone card, «Заряд в
 step dark-demo yes --ez demo true
 if adb logcat -d -s Glance:I | grep -q "forecast:"; then note "dark-demo: прогноз «хватит на…» показан — $(adb logcat -d -s Glance:I | grep -m1 'forecast:' | sed 's/.*forecast: //')"
 else fail "dark-demo: прогноз «хватит на…» не показан"; fi
+if adb logcat -d -s Glance:I | grep -qE "drawn: .*paired=[1-9]"; then note "dark-demo: раздел «Можно подключить» показан — $(adb logcat -d -s Glance:I | grep -m1 -oE 'paired=[0-9]+')"
+else fail "dark-demo: раздел «Можно подключить» не показан"; fi
 shade dark-shade
 bottom dark-demo-bottom
 adb logcat -d -s Glance:I | grep -q "scrim: shown" && note "dark-demo-bottom: под строкой состояния — мягкое затемнение" || fail "dark-demo-bottom: затемнение под строкой состояния не появилось"

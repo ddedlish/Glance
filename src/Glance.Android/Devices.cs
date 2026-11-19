@@ -32,7 +32,27 @@ internal sealed class Devices
     public int? PhoneLevel { get; private set; }
     public bool PhoneCharging { get; private set; }
 
-    public Devices(Context ctx) => _ctx = ctx;
+    public Devices(Context ctx)
+    {
+        _ctx = ctx;
+        _gatt = new GattBattery(ctx, _main, OnGattLevel);
+    }
+
+    readonly GattBattery _gatt;
+    readonly HashSet<string> _bonded = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Paired with the phone but not connected right now: shown under «Можно подключить», the most recently used first.
+    /// </summary>
+    public IReadOnlyList<Accessory> Available => _all.Values.Where(a => !a.Connected && _bonded.Contains(a.Key))
+        .OrderByDescending(a => a.LastSeen)
+        .ThenBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase).Take(8).ToList();
+
+    /// <summary>The device a tap is connecting right now (cleared when it connects or after a timeout).</summary>
+    public string? Connecting { get; private set; }
+
+    /// <summary>Connected, but reports no battery anywhere (no system level, no Battery Service): «не сообщает заряд».</summary>
+    public bool Silent(Accessory a) => !Demo && a.Level is null && !a.HasParts && _gatt.Failed(a.Key);
 
     public IReadOnlyList<Accessory> Connected => _all.Values.Where(a => a.Connected)
         .OrderByDescending(a => a.Level.HasValue || a.HasParts)
@@ -124,6 +144,7 @@ internal sealed class Devices
                 if (string.IsNullOrEmpty(addr)) continue;
                 string key = "BT:" + addr;
                 seen.Add(key);
+                _bonded.Add(key);
                 bool connected = Hidden.Bool(d, "isConnected") ?? (Hidden.Int(d, "getBatteryLevel") is int probe && probe >= 0);
                 if (!_all.TryGetValue(key, out var a))
                 {
@@ -134,7 +155,8 @@ internal sealed class Devices
                 }
                 if (connected && !a.Connected) a.ConnectedAt = DateTime.Now;
                 a.Connected = connected;
-                if (!connected) continue;
+                if (connected && Connecting == key) Connecting = null;
+                if (!connected) { _gatt.Drop(key); continue; }
                 a.LastSeen = DateTime.Now;
                 // show the remembered case level right away, before the first earbud broadcast
                 if (a.Profile.Buds != BudsSource.None && !a.Case.Known && LastCase(key) is { } lc) a.Case = new Part(lc.Level, false);
@@ -144,11 +166,113 @@ internal sealed class Devices
                     a.LastLevel = lvl;
                     a.SystemSource = "Android";
                 }
+                // speakers and headsets without the HFP battery report: ask their BLE Battery Service (0x180F)
+                else if (a.Profile.Buds == BudsSource.None && a.SystemSource != "GATT") _gatt.Want(d, key);
             }
         }
         catch (Exception e) { Log.Error("Android bonded devices", e); }
-        foreach (var a in _all.Values) if (!seen.Contains(a.Key)) a.Connected = false;
+        _bonded.IntersectWith(seen);
+        foreach (var a in _all.Values) if (!seen.Contains(a.Key)) { a.Connected = false; _gatt.Drop(a.Key); }
         Changed?.Invoke();
+    }
+
+    void OnGattLevel(string key, int level)
+    {
+        if (level < 0) { Changed?.Invoke(); return; } // attempts over: redraw «не сообщает заряд»
+        if (!_all.TryGetValue(key, out var a) || !a.Connected) return;
+        if (a.SystemSource is "Android" && a.SystemLevel is not null) return; // the system report wins
+        a.SystemLevel = level;
+        a.LastLevel = level;
+        a.SystemSource = "GATT";
+        a.LastSeen = DateTime.Now;
+        Changed?.Invoke();
+    }
+
+    // ───────── connecting a paired device ─────────
+
+    /// <summary>
+    /// A tap on a paired device: asks the A2DP and headset profiles to connect it (works where the system allows apps
+    /// to); when it does not, opens Bluetooth settings with the device in the list.
+    /// </summary>
+    public void Connect(string key, Android.App.Activity act)
+    {
+        if (Demo || !_all.TryGetValue(key, out var acc) || acc.Connected) return;
+        var adapter = (_ctx.GetSystemService(Context.BluetoothService) as BluetoothManager)?.Adapter;
+        if (adapter is null || !adapter.IsEnabled || !CanConnect) { OpenBluetoothSettings(act); return; }
+        Connecting = key;
+        Changed?.Invoke();
+        var weak = new WeakReference<Android.App.Activity>(act);
+        bool any = false;
+        int pending = 2;
+        void Done(bool ok)
+        {
+            any |= ok;
+            if (--pending > 0) return;
+            Android.Util.Log.Info("Glance", $"connect: {acc.DisplayName} requested={any}");
+            if (!any)
+            {
+                Connecting = null;
+                Changed?.Invoke();
+                if (weak.TryGetTarget(out var a) && !a.IsFinishing) OpenBluetoothSettings(a);
+                return;
+            }
+            // give it a moment; if it still is not connected, the settings page lets the user finish
+            _main.PostDelayed(() =>
+            {
+                if (Connecting != key) return;
+                Connecting = null;
+                Refresh();
+                if (!acc.Connected && weak.TryGetTarget(out var a) && !a.IsFinishing && MainActivity.Visible) OpenBluetoothSettings(a);
+            }, 12_000);
+        }
+        try
+        {
+            var dev = adapter.GetRemoteDevice(key[3..]);
+            foreach (var profile in new[] { ProfileType.A2dp, ProfileType.Headset })
+            {
+                var listener = new ProfileListener((type, proxy) =>
+                {
+                    bool ok = false;
+                    try
+                    {
+                        if (proxy is Java.Lang.Object jo)
+                        {
+                            var m = jo.Class.GetMethod("connect", Java.Lang.Class.FromType(typeof(BluetoothDevice)));
+                            ok = m?.Invoke(jo, dev)?.ToString() == "true";
+                        }
+                    }
+                    catch (Exception e) { Android.Util.Log.Info("Glance", $"connect {type}: {e.GetType().Name} {e.Message}"); }
+                    try { adapter.CloseProfileProxy(type, proxy); } catch { }
+                    _main.Post(() => Done(ok));
+                });
+                if (!adapter.GetProfileProxy(_ctx, listener, profile)) Done(false);
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error("Android connect", e);
+            Connecting = null;
+            Changed?.Invoke();
+            OpenBluetoothSettings(act);
+        }
+    }
+
+    public static void OpenBluetoothSettings(Android.App.Activity act)
+    {
+        try { act.StartActivity(new Intent(Android.Provider.Settings.ActionBluetoothSettings)); }
+        catch (Exception e) { Log.Error("Android bluetooth settings", e); }
+    }
+
+    sealed class ProfileListener(Action<ProfileType, IBluetoothProfile> connected) : Java.Lang.Object, IBluetoothProfileServiceListener
+    {
+        bool _done;
+        public void OnServiceConnected(ProfileType profile, IBluetoothProfile? proxy)
+        {
+            if (_done || proxy is null) return;
+            _done = true;
+            connected(profile, proxy);
+        }
+        public void OnServiceDisconnected(ProfileType profile) { }
     }
 
     void ReadPhone(Intent i)
@@ -400,6 +524,15 @@ internal sealed class Devices
                      Dev("BT:DEMO:SPK", "JBL Flip 6", DeviceKind.Speaker, 34),
                  })
             _all[a.Key] = a;
+        foreach (var (key, name, kind, ago) in new[] { ("BT:DEMO:SONY", "WH-1000XM5", DeviceKind.Headphones, 30), ("BT:DEMO:CAR", "Car Audio", DeviceKind.Speaker, 300) })
+        {
+            var off = Dev(key, name, kind, null);
+            off.Connected = false;
+            off.LastSeen = DateTime.Now.AddMinutes(-ago);
+            off.LastLevel = ago < 60 ? 62 : null;
+            _all[key] = off;
+            _bonded.Add(key);
+        }
         PhoneLevel = 76;
         PhoneCharging = false;
         Changed?.Invoke();

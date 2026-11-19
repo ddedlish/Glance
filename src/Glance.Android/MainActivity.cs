@@ -62,6 +62,7 @@ public sealed class MainActivity : Activity
         _view.BottomInset = _settings.BottomInset = SystemBar("navigation_bar_height");
         _view.PermissionRequested += AskPermissions;
         _view.UpdateRequested += OpenUpdate;
+        _view.ConnectRequested += key => _dev?.Connect(key, this); // «Можно подключить»: one tap connects a paired device
         _view.PopupAllowed = ConnectPopup.Allowed(this);
         _view.PopupPermissionRequested += OpenOverlaySettings;
         _view.LowAt = UserPrefs.LowAt(this);
@@ -405,7 +406,7 @@ public sealed class MainActivity : Activity
             _view.Update = u;
             _view.RequestLayout();
             _view.Invalidate();
-            Updater.Prefetch(u); // on Wi-Fi the APK is ready before the banner is even tapped
+            Updater.Auto(u, this); // «Автообновление»: downloads and installs by itself, no tap needed
         });
     }
 

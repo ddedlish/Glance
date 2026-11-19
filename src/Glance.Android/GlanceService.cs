@@ -314,7 +314,7 @@ public sealed class GlanceService : Service
         _ = Task.Run(async () =>
         {
             var u = await Updates.CheckAsync().ConfigureAwait(false);
-            if (u is not null) _main.Post(() => { Updater.Announce(u); Updater.Prefetch(u); });
+            if (u is not null) _main.Post(() => { Updater.Announce(u); Updater.Auto(u, null); });
         });
     }
 
@@ -555,6 +555,7 @@ public sealed class BootReceiver : BroadcastReceiver
     public override void OnReceive(Context? context, Intent? intent)
     {
         if (context is null) return;
+        if (intent?.Action == Intent.ActionMyPackageReplaced) Updater.AfterUpdate(context);
         GlanceService.Start(context, false);
     }
 }

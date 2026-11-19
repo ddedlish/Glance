@@ -15,7 +15,9 @@
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
   <!-- Updates inside the app: the downloaded APK is installed over this version through PackageInstaller -->
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-  <!-- download updates in advance only on Wi-Fi (unmetered network) -->
+  <!-- Android 12+: updates of Glance by Glance itself go in without the extra «Обновить?» tap -->
+  <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+  <!-- network state for the background download of updates -->
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
   <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
