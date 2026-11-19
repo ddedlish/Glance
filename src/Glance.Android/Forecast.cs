@@ -91,12 +91,13 @@ internal static class Forecast
     public static string? Short(Accessory a, bool demo) =>
         Estimate(a, demo) is TimeSpan t ? (a.Charging ? $"до 100% · {Span(t)}" : $"≈ {Span(t)}") : null;
 
-    /// <summary>For the hero and notices: («Хватит на ≈ 2 ч 40 мин», « · до 19:30»).</summary>
-    public static (string Main, string Clock)? Long(Accessory a, bool demo)
+    /// <summary>For the hero and notices: («Хватит на ≈ 2 ч 40 мин», « · до 19:30», «≈ 2 ч 40 мин» for narrow screens).</summary>
+    public static (string Main, string Clock, string Brief)? Long(Accessory a, bool demo)
     {
         if (Estimate(a, demo) is not TimeSpan t) return null;
         string main = a.Charging ? $"До полной ≈ {Span(t)}" : $"Хватит на ≈ {Span(t)}";
         string clock = Fmt.ClockAt(t) is string at ? (a.Charging ? $" · к {at}" : $" · до {at}") : "";
-        return (main, clock);
+        string brief = a.Charging ? $"До 100% ≈ {Span(t)}" : $"≈ {Span(t)}";
+        return (main, clock, brief);
     }
 }

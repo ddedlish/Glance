@@ -223,7 +223,7 @@ public sealed class GlanceService : Service
             // short title and text: the collapsed notification shows them whole; the details are in the expanded view
             string title = low ? $"{a.DisplayName} — {lvl}%" : $"{a.DisplayName} заряжен";
             var fc = low ? Forecast.Long(a, _dev?.Demo ?? false) : null;
-            string text = low ? (a.HasParts ? $"Пора зарядить · {Parts(a)}%" : fc is { } f1 ? $"Пора зарядить · {f1.Main.ToLowerInvariant()}" : "Пора зарядить") : "Можно снять с зарядки";
+            string text = low ? (a.HasParts ? $"Пора зарядить · {Parts(a)}%" : "Пора зарядить") : "Можно снять с зарядки"; // the forecast is in the expanded text
             string more = low
                 ? $"{(a.HasParts ? $"Пора зарядить: {Parts(a)}%." : $"Пора зарядить: осталось {lvl}%.")}{(fc is { } f2 ? $" {f2.Main}{f2.Clock}." : "")} Предупреждение на {LowAt}% и ниже — порог меняется в настройках Glance."
                 : $"Заряд {lvl}% — можно снять с зарядки.";

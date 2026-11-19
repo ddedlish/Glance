@@ -573,7 +573,7 @@ internal sealed class GlanceView : GlassView
         string line = a.Charging ? "Заряжается" : lvl <= LowAt ? "Пора зарядить" : lvl <= 40 ? "Разрядится первым" : "Всё в порядке";
         var fc = Forecast.Long(a, _dev.Demo);
         Text(c, line, tx, r.Top + Dp(fc is null ? 74 : 70), Dp(14.5f), lvl <= LowAt && !a.Charging ? Palette.Red : _p.Text, maxW: tw);
-        if (fc is { } f) ForecastLine(c, f.Main, f.Clock, tx, r.Top + Dp(95), tw, shown, col, a.Charging);
+        if (fc is { } f) ForecastLine(c, f.Main, f.Clock, f.Brief, tx, r.Top + Dp(95), tw, shown, col, a.Charging);
         string sub = a.HasParts ? $"Левый {Fmt.Percent(a.Left.Level)} · Правый {Fmt.Percent(a.Right.Level)}" : a.Link;
         Text(c, sub, tx, r.Top + Dp(fc is null ? 98 : 119), Dp(12.5f), _p.Sub, maxW: tw);
         if (!_forecastLogged && fc is { } lf) { _forecastLogged = true; Android.Util.Log.Info("Glance", $"forecast: {a.DisplayName} {lf.Main}{lf.Clock}"); }
@@ -585,15 +585,15 @@ internal sealed class GlanceView : GlassView
     /// «Хватит на ≈ 2 ч 40 мин · до 19:30» with a little hourglass whose sand is the charge: it pours down together
     /// with the ring when the screen opens. While charging — a bolt and «До полной ≈ 45 мин».
     /// </summary>
-    void ForecastLine(Canvas c, string main, string clock, float x, float baseline, float maxW, float level, AColor col, bool charging)
+    void ForecastLine(Canvas c, string main, string clock, string brief, float x, float baseline, float maxW, float level, AColor col, bool charging)
     {
         var box = new RectF(x, baseline - Dp(12), x + Dp(10), baseline + Dp(1));
         if (charging) Icons.Bolt(c, new RectF(box.Left - Dp(1), box.Top, box.Right + Dp(1), box.Bottom), Palette.Green);
         else Hourglass(c, box, level / 100f, col);
         float tx = box.Right + Dp(7), room = maxW - (tx - x);
         using var p = TextPaint(Dp(13), true);
-        string s = main + clock;
-        if (p.MeasureText(s) > room) s = main; // narrow screen: the clock time goes first
+        // the widest variant that fits whole: narrow screens drop the clock time first, then «Хватит на»
+        string s = new[] { main + clock, main, brief + clock }.FirstOrDefault(v => p.MeasureText(v) <= room) ?? brief;
         Text(c, s, tx, baseline, Dp(13), Palette.Mix(_p.Text, col, _p.Dark ? 0.25f : 0.35f), bold: true, maxW: room);
     }
 
