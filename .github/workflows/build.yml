@@ -173,7 +173,9 @@ jobs:
             keytool -genkeypair -v -keystore ~/.glance-sign/glance.keystore -alias glance -keyalg RSA -keysize 4096 -validity 36500 \
               -storepass "$(cat ~/.glance-sign/pass)" -keypass "$(cat ~/.glance-sign/pass)" -dname "CN=Glance, O=ddedlish"
           fi
-          echo "SIGN_ARGS=-p:AndroidKeyStore=true -p:AndroidSigningKeyStore=$HOME/.glance-sign/glance.keystore -p:AndroidSigningKeyAlias=glance -p:AndroidSigningStorePass=file:$HOME/.glance-sign/pass -p:AndroidSigningKeyPass=file:$HOME/.glance-sign/pass" >> "$GITHUB_ENV"
+          # apksigner reads the store and key passwords line by line: same file twice = EOF, so two files
+          cp ~/.glance-sign/pass ~/.glance-sign/keypass
+          echo "SIGN_ARGS=-p:AndroidKeyStore=true -p:AndroidSigningKeyStore=$HOME/.glance-sign/glance.keystore -p:AndroidSigningKeyAlias=glance -p:AndroidSigningStorePass=file:$HOME/.glance-sign/pass -p:AndroidSigningKeyPass=file:$HOME/.glance-sign/keypass" >> "$GITHUB_ENV"
       - name: Save signing key
         if: github.event_name != 'pull_request' && env.ANDROID_KEYSTORE_B64 == '' && steps.keycache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
