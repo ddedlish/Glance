@@ -87,8 +87,13 @@ popup() { # name — the glass card that slides up over any app the moment earbu
   adb shell am start -n "$ACT" --ez demo true --ez popup true >/dev/null 2>&1
   sleep 1.3
   adb shell input keyevent KEYCODE_HOME
-  sleep 2.2
+  sleep 1.5
   N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$name")"
+  local win; win=$(adb shell dumpsys window windows 2>/dev/null | grep -cE "ty=APPLICATION_OVERLAY|TYPE_APPLICATION_OVERLAY|type=2038" )
+  sleep 1.5
+  N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s-2.png" $N "$name")"
+  adb logcat -d -s Glance:I | grep -E "popup|announce" | sed 's/^/  /' >> "$REPORT"
+  note "$name: окон поверх приложений: ${win:-?}"
   if adb logcat -d -s Glance:I | grep -q "popup shown:"; then note "$name: окно при подключении показано"
   else fail "$name: окно при подключении не появилось"; adb logcat -d -s Glance:* | tail -20 >> "$REPORT"; adb shell appops get $PKG SYSTEM_ALERT_WINDOW >> "$REPORT" 2>&1; fi
   if adb logcat -d | grep -E "FATAL EXCEPTION" >/dev/null; then fail "$name: падение"; adb logcat -d | grep -A30 "FATAL EXCEPTION" | head -60 >> "$REPORT"; fi
