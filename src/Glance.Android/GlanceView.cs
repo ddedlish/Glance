@@ -182,7 +182,8 @@ internal sealed class GlanceView : View
             var icon = new RectF(w / 2 - Dp(26), cy, w / 2 + Dp(26), cy + Dp(52));
             Icons.Draw(canvas, DeviceKind.Unknown, icon, _p.Sub, Dp(1.8f));
             TextCentered(canvas, "Нет подключённых аксессуаров", w / 2, cy + Dp(86), Dp(17), _p.Text, true);
-            TextCentered(canvas, "Подключите наушники, часы или геймпад по Bluetooth", w / 2, cy + Dp(112), Dp(13.5f), _p.Sub, false);
+            TextCentered(canvas, "Подключите наушники, часы", w / 2, cy + Dp(112), Dp(13.5f), _p.Sub, false);
+            TextCentered(canvas, "или геймпад по Bluetooth", w / 2, cy + Dp(131), Dp(13.5f), _p.Sub, false);
             y += Dp(200);
         }
         else
@@ -290,7 +291,8 @@ internal sealed class GlanceView : View
         Tile(c, tile, a.Kind);
 
         float tx = tile.Right + Dp(14);
-        float pctW = Dp(70);
+        int? lvl0 = a.Level;
+        float pctW = MeasureBig(lvl0 is int l0 ? $"{l0}%" : "—") + Dp(a.Charging ? 34 : 14);
         Text(c, a.DisplayName, tx, r.Top + Dp(37), Dp(16.5f), _p.Text, bold: true, maxW: r.Right - tx - pctW - Dp(12));
         string link = phoneCard ? (a.Charging ? "Заряжается" : a.Profile.Brand) : (a.Charging ? "Заряжается · " : "") + a.Link;
         string feat = phoneCard ? "" : Profiles.Features(a.Profile);
@@ -397,8 +399,8 @@ internal sealed class GlanceView : View
     {
         if (a.WeakestLevel is not int lvl) return;
         Glass(c, r, Dp(26));
-        float d = Dp(104), th = Dp(10);
-        var ring = new RectF(r.Left + Dp(20), r.CenterY() - d / 2, r.Left + Dp(20) + d, r.CenterY() + d / 2);
+        float d = Dp(92), th = Dp(9);
+        var ring = new RectF(r.Left + Dp(18), r.CenterY() - d / 2, r.Left + Dp(18) + d, r.CenterY() + d / 2);
         float shown = Tween("H:" + a.Key, lvl);
         var col = Palette.Level(lvl, a.Charging);
 
@@ -421,12 +423,12 @@ internal sealed class GlanceView : View
             arc.SetStyle(Paint.Style.Stroke);
             c.DrawArc(arcBox, -90, 360 * shown / 100f, false, arc);
         }
-        TextCentered(c, $"{(int)MathF.Round(shown)}%", ring.CenterX(), ring.CenterY() + Dp(9), Dp(25), _p.Text, true);
+        TextCentered(c, $"{(int)MathF.Round(shown)}%", ring.CenterX(), ring.CenterY() + Dp(8), Dp(22), _p.Text, true);
 
-        float tx = ring.Right + Dp(20), tw = r.Right - tx - Dp(16);
+        float tx = ring.Right + Dp(18), tw = r.Right - tx - Dp(14);
         var tile = new RectF(tx, r.Top + Dp(26), tx + Dp(22), r.Top + Dp(48));
         Icons.Draw(c, a.Kind, tile, Palette.KindColor(a.Kind), Dp(2));
-        Text(c, a.DisplayName, tx + Dp(28), r.Top + Dp(43), Dp(17), _p.Text, bold: true, maxW: tw - Dp(28));
+        Text(c, a.DisplayName, tx + Dp(28), r.Top + Dp(43), Dp(16), _p.Text, bold: true, maxW: tw - Dp(28));
         string line = a.Charging ? "Заряжается" : lvl <= 20 ? "Пора зарядить" : lvl <= 40 ? "Разрядится первым" : "Всё в порядке";
         Text(c, line, tx, r.Top + Dp(74), Dp(14.5f), lvl <= 20 && !a.Charging ? Palette.Red : _p.Text, maxW: tw);
         string sub = a.HasParts ? $"Левый {Fmt.Percent(a.Left.Level)} · Правый {Fmt.Percent(a.Right.Level)}" : a.Link;
