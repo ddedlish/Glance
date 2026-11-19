@@ -14,8 +14,8 @@
     <ApplicationId>io.github.ddedlish.glance</ApplicationId>
     <Version>4.2.10</Version>
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
-    <!-- versionCode must grow with every release: 4.2.9 → 40209 -->
-    <ApplicationVersion>$([MSBuild]::Add($([MSBuild]::Multiply($([System.Version]::Parse('$(Version)').Major), 10000)), $([MSBuild]::Add($([MSBuild]::Multiply($([System.Version]::Parse('$(Version)').Minor), 100)), $([System.Version]::Parse('$(Version)').Build))))</ApplicationVersion>
+    <!-- versionCode must grow with every release: 4.2.10 → 40210 (CI passes it from the version) -->
+    <ApplicationVersion>40210</ApplicationVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <Deterministic>true</Deterministic>
