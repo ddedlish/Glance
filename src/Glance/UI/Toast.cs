@@ -23,6 +23,9 @@ internal sealed class ToastForm : CardForm
     int _baseY;
     string? _action;      // sticky notification with buttons (new version available)
     string _hotBtn = "";
+    // living liquid in the gauges: one per ring (left, right, case) or the level bar; each moves on its own
+    readonly LiquidFill[] _liquid = { new(0f), new(2.4f), new(4.1f) };
+    System.Windows.Forms.Timer? _tick;
 
     public event Action<ToastForm>? Finished;
 
@@ -65,6 +68,7 @@ internal sealed class ToastForm : CardForm
         Relayout();
         if (Height != oldH) { _baseY -= Height - oldH; Top = _baseY; }
         Invalidate();
+        EnsureTick();
     }
 
     public void Upgrade(ToastKind kind)
@@ -88,8 +92,36 @@ internal sealed class ToastForm : CardForm
         _slide?.Cancel();
         _slide = Animator.Run(420, p => { if (!IsDisposed) Top = _baseY + (int)MathF.Round(Px(26) * (1 - p)); }, null, Animator.Spring);
         if (animateRings)
+        {
             _anim = Animator.Run(700, p => { if (IsDisposed) return; _grow = p; Invalidate(); });
+            // the card lands — the liquid pours in and splashes, ring after ring
+            for (int i = 0; i < _liquid.Length; i++) _liquid[i].Push(1.1f, 260 + i * 110);
+            EnsureTick();
+        }
         RestartLife();
+    }
+
+    /// <summary>~30 fps repaint only while the liquid moves (a splash, or a device that is charging); stops by itself.</summary>
+    void EnsureTick()
+    {
+        if (_tick is null)
+        {
+            _tick = new System.Windows.Forms.Timer { Interval = 33 };
+            _tick.Tick += (_, _) =>
+            {
+                if (IsDisposed || _closing) { _tick!.Stop(); return; }
+                if (!LiquidAlive()) { _tick!.Stop(); Invalidate(); return; }
+                Invalidate();
+            };
+        }
+        if (!_tick.Enabled && LiquidAlive()) _tick.Start();
+    }
+
+    bool LiquidAlive()
+    {
+        if (Device is not Accessory a || Kind == ToastKind.Message || NoData()) return false;
+        if (_liquid.Any(l => l.Sloshing)) return true;
+        return !Program.SafeMode.On && (a.Charging || a.Left.Charging || a.Right.Charging || a.Case.Charging);
     }
 
     void RestartLife()
@@ -259,7 +291,9 @@ internal sealed class ToastForm : CardForm
                 float cx = 16 * s + slot * i + slot / 2;
                 var rr = new RectangleF(cx - ring / 2, y, ring, ring);
                 float? frac = p.Level is int l ? l / 100f * _grow : null;
-                Painter.Ring(g, rr, 6 * s, frac, t.BarColor(p.Level, p.Charging, Svc.Low), t.Track);
+                var rc = t.BarColor(p.Level, p.Charging, Svc.Low);
+                Painter.Ring(g, rr, 6 * s, frac, rc, t.Track);
+                if (frac is float lf) _liquid[i % _liquid.Length].DrawDisc(g, RectangleF.Inflate(rr, -9 * s, -9 * s), lf * 100f, rc, p.Charging, s, t);
                 string v = p.Level is int lv ? $"{(int)Math.Round(lv * _grow)}" : "—";
                 var vf = Fonts.Big(18 * s);
                 Painter.Text(g, v, vf, p.Known ? t.Text : t.SubText, new RectangleF(rr.X, rr.Y + (p.Charging ? 6 * s : 0), rr.Width, rr.Height - (p.Charging ? 6 * s : 0)), StringAlignment.Center);
@@ -277,14 +311,8 @@ internal sealed class ToastForm : CardForm
             float pw = Painter.Width(g, "100%", pf) + 6 * s;
             var bar = new RectangleF(16 * s, y + 6 * s, W - 32 * s - pw - 12 * s, 12 * s);
             Painter.FillRound(g, bar, bar.Height / 2, Theme.Alpha(t.Track, 200));
-            if (shownF > 0.5f)
-            {
-                var fill = new RectangleF(bar.X, bar.Y, Math.Max(bar.Height, bar.Width * shownF / 100f), bar.Height);
-                var col = t.BarColor(lvl, a.Charging, Svc.Low);
-                using var fp = Painter.Round(fill, bar.Height / 2);
-                using var fb = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(fill.X, fill.Y - 1, fill.Width, fill.Height + 2), Theme.Mix(col, Color.White, 0.25f), col, 90f);
-                g.FillPath(fb, fp);
-            }
+            // the bar is a capsule of living liquid: its front leans and wobbles as the card lands, a sheen glides along it
+            _liquid[0].DrawCapsule(g, bar, shownF, t.BarColor(lvl, a.Charging, Svc.Low), a.Charging, s, t);
             Painter.Text(g, lvl is null ? "—" : $"{(int)MathF.Round(shownF)}%", pf, t.LevelColor(lvl, a.Charging, Svc.Low),
                 new RectangleF(W - 16 * s - pw, y - 4 * s, pw, 32 * s), StringAlignment.Far);
             string note = a.Charging
@@ -308,6 +336,9 @@ internal sealed class ToastForm : CardForm
         base.OnMouseEnter(e);
         _hover = true;
         _life.Stop();
+        // touching the card makes the liquid wobble
+        for (int i = 0; i < _liquid.Length; i++) _liquid[i].Push(0.5f, i * 70);
+        EnsureTick();
         Invalidate();
     }
 
@@ -344,7 +375,7 @@ internal sealed class ToastForm : CardForm
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _life.Dispose(); _anim?.Cancel(); _slide?.Cancel(); }
+        if (disposing) { _life.Dispose(); _tick?.Dispose(); _anim?.Cancel(); _slide?.Cancel(); }
         base.Dispose(disposing);
     }
 }

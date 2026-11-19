@@ -58,6 +58,9 @@ internal sealed partial class AppHost
 
                 await Do($"{look}-toast", () => _toasts.ShowDevice(_r.Get("DEMO:buds")!, ToastKind.Connected), 1400);
                 _toasts.CloseAll();
+                // single-level toast: the bar is a capsule of living liquid (charging keyboard → bubbles and sheen)
+                await Do($"{look}-toast-bar", () => _toasts.ShowDevice(_r.Get("DEMO:kbd")!, ToastKind.Connected), 1400);
+                _toasts.CloseAll();
 
                 await Do($"{look}-panel", () => OpenFlyout(null));
                 _flyout?.Close();
