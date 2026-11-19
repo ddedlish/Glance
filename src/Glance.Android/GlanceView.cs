@@ -516,11 +516,12 @@ internal sealed class GlanceView : View
     static readonly Typeface Regular = Typeface.Create("sans-serif", TypefaceStyle.Normal)!;
     static readonly Typeface Bold = Typeface.Create("sans-serif-medium", TypefaceStyle.Normal)!;
 
-    static Paint TextPaint(float size, bool bold) => new(PaintFlags.AntiAlias | PaintFlags.SubpixelText)
+    static Paint TextPaint(float size, bool bold)
     {
-        TextSize = size,
-        Typeface = bold ? Bold : Regular,
-    };
+        var p = new Paint(PaintFlags.AntiAlias | PaintFlags.SubpixelText) { TextSize = size };
+        p.SetTypeface(bold ? Bold : Regular);
+        return p;
+    }
 
     void Text(Canvas c, string s, float x, float baseline, float size, AColor color, bool bold = false, float maxW = 0, float spacing = 0)
     {

@@ -59,7 +59,11 @@ internal sealed class Devices
             f.AddAction(BluetoothDevice.ActionAclDisconnected);
             f.AddAction(BluetoothAdapter.ActionStateChanged);
             f.AddAction(Intent.ActionBatteryChanged);
-            try { _ctx.RegisterReceiver(_rx, f, ReceiverFlags.Exported); }
+            try
+            {
+                if (OperatingSystem.IsAndroidVersionAtLeast(33)) _ctx.RegisterReceiver(_rx, f, ReceiverFlags.Exported);
+                else _ctx.RegisterReceiver(_rx, f);
+            }
             catch (Exception e) { Log.Error("Android receiver", e); }
         }
         Refresh();
