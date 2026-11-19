@@ -228,9 +228,6 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         {
             Row($"Pro активирован · {Pro.Info!.Owner}", $"Спасибо за поддержку! Ключ от {Pro.Info.Issued:dd.MM.yyyy}", null);
         }
-        var tip = new FlatButton(sc, "Поддержать ♥");
-        tip.Click += (_, _) => ProUi.Donate();
-        Row("Пожертвование — по желанию", "Любая сумма на Boosty. Glance остаётся бесплатным, ничего не блокируется", tip);
         else
         {
             var buy = new FlatButton(sc, "Купить", primary: true);
@@ -240,6 +237,9 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
             enter.Click += (_, _) => { if (ProUi.Activate(_s)) { _s.NotifyChanged(); Ui.Post(Build); } };
             Row("Уже есть ключ?", "Ключ приходит после покупки на Boosty", enter);
         }
+        var tip = new FlatButton(sc, "Поддержать ♥");
+        tip.Click += (_, _) => ProUi.Donate();
+        Row("Пожертвование — по желанию", "Любая сумма на Boosty. Glance остаётся бесплатным, ничего не блокируется", tip);
 
         // Pro control: real control when active, otherwise a «Pro» button that explains what it unlocks.
         Control ProOnly(Control real, string feature)
