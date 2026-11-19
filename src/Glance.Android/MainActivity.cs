@@ -78,6 +78,7 @@ public sealed class MainActivity : Activity
         _settings.SourceRequested += () => OpenUrl("https://github.com/ddedlish/Glance");
         _settings.AuthorRequested += () => OpenUrl("https://steamcommunity.com/id/ddedlish/");
         _settings.DonateRequested += () => OpenUrl("https://boosty.to/ddedlish");
+        _settings.YooMoneyRequested += () => OpenUrl("https://yoomoney.ru/to/4100119618332005");
         _settings.WidgetCount = GlanceWidget.Count(this);
         _settings.WidgetRequested += () =>
         {

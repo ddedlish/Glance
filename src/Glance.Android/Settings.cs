@@ -226,13 +226,13 @@ internal sealed class SettingsView : GlassView
     public int Theme { get; set; }
     public string VersionText { get; set; } = "";
 
-    public event Action? BackRequested, PopupRequested, SourceRequested, AuthorRequested, DonateRequested, WidgetRequested;
+    public event Action? BackRequested, PopupRequested, SourceRequested, AuthorRequested, DonateRequested, YooMoneyRequested, WidgetRequested;
     public event Action<bool>? ShadeToggled, SoundsToggled, NotifyToggled, AutoUpdateToggled;
     public event Action<int>? LowAtChanged, ThemeChanged;
 
     static readonly string[] ThemeNames = { "Системная", "Тёмная", "Светлая" };
 
-    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _autoR = new(), _popR = new(), _widgetR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new(), _authorR = new(), _donateR = new();
+    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _autoR = new(), _popR = new(), _widgetR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new(), _authorR = new(), _donateR = new(), _yooR = new();
     long _shadeT0 = -10_000, _soundT0 = -10_000, _notifyT0 = -10_000, _autoT0 = -10_000, _lowT0 = -10_000, _themeT0 = -10_000;
     float _lowFrom, _themeFrom;
     bool _drawnOnce;
@@ -244,7 +244,7 @@ internal sealed class SettingsView : GlassView
 
     // ───────── layout (dp) ─────────
 
-    const float Gap = 12, RowH = 72, SegCardH = 116, AboutH = 240, Head = 28;
+    const float Gap = 12, RowH = 72, SegCardH = 116, AboutH = 292, Head = 28;
 
     float ContentHeight() => Dp(TopInset / _d + 20 + 96 + 8 * Head + 6 * (RowH + Gap) + 2 * (SegCardH + Gap) + AboutH + Gap + 40) + BottomInset;
 
@@ -358,6 +358,7 @@ internal sealed class SettingsView : GlassView
         var ab = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(AboutH));
         _authorR = new RectF(ab.Left, ab.Top + Dp(84), ab.Right, ab.Top + Dp(136));
         _donateR = new RectF(ab.Left, ab.Top + Dp(136), ab.Right, ab.Top + Dp(188));
+        _yooR = new RectF(ab.Left, ab.Top + Dp(188), ab.Right, ab.Top + Dp(240));
         _srcR = new RectF(ab.Left, ab.Bottom - Dp(52), ab.Right, ab.Bottom);
         Shift(canvas, idx++, () => DrawAbout(canvas, ab));
 
@@ -655,13 +656,14 @@ internal sealed class SettingsView : GlassView
         Text(c, "Glance для Android", tx, r.Top + Dp(37), Dp(16.5f), _p.Text, bold: true, maxW: r.Right - tx - Dp(16));
         Text(c, VersionText, tx, r.Top + Dp(58), Dp(12.5f), _p.Sub, maxW: r.Right - tx - Dp(16));
 
-        // three link rows: the author's profile, a donation, the source code
+        // link rows: the author's profile, two ways to donate, the source code
         LinkRow(c, r, r.Top + Dp(84), "Автор — ddedlish", "Профиль в Steam", AColor.Argb(255, 102, 192, 244), Glyph.Person);
         LinkRow(c, r, r.Top + Dp(136), "Поддержать автора", "Boosty, любая сумма", AColor.Argb(255, 255, 94, 135), Glyph.Heart);
-        LinkRow(c, r, r.Top + Dp(188), "Исходный код", "GitHub · ddedlish/Glance", _p.Accent, Glyph.Code);
+        LinkRow(c, r, r.Top + Dp(188), "Перевод на ЮMoney", "Любая сумма, с карты", AColor.Argb(255, 139, 63, 253), Glyph.Wallet);
+        LinkRow(c, r, r.Top + Dp(240), "Исходный код", "GitHub · ddedlish/Glance", _p.Accent, Glyph.Code);
     }
 
-    enum Glyph { Person, Heart, Code }
+    enum Glyph { Person, Heart, Wallet, Code }
 
     /// <summary>A divider, a small coloured glyph, title + subtitle and a chevron; the heart beats softly.</summary>
     void LinkRow(Canvas c, RectF card, float top, string title, string sub, AColor col, Glyph g)
@@ -690,6 +692,19 @@ internal sealed class SettingsView : GlassView
                 h.Close();
                 c.DrawPath(h, p);
                 if (alive) PostInvalidateOnAnimation();
+                break;
+            }
+            case Glyph.Wallet:
+            {
+                // a wallet: body, flap line and a clasp
+                p.SetStyle(Paint.Style.Stroke);
+                p.StrokeWidth = Dp(1.8f);
+                var body = new RectF(cx - Dp(7.5f), cy - Dp(5.5f), cx + Dp(7.5f), cy + Dp(6));
+                c.DrawRoundRect(body, Dp(2.2f), Dp(2.2f), p);
+                c.DrawLine(cx - Dp(7.5f), cy - Dp(2), cx + Dp(4), cy - Dp(2), p);
+                c.DrawRoundRect(new RectF(cx + Dp(2), cy - Dp(0.5f), cx + Dp(7.5f), cy + Dp(3.5f)), Dp(1.2f), Dp(1.2f), p);
+                p.SetStyle(Paint.Style.Fill);
+                c.DrawCircle(cx + Dp(4.6f), cy + Dp(1.5f), Dp(0.9f), p);
                 break;
             }
             default:
@@ -781,6 +796,7 @@ internal sealed class SettingsView : GlassView
                 else if (_srcR.Contains(x, y)) SourceRequested?.Invoke();
                 else if (_authorR.Contains(x, y)) AuthorRequested?.Invoke();
                 else if (_donateR.Contains(x, y)) DonateRequested?.Invoke();
+                else if (_yooR.Contains(x, y)) YooMoneyRequested?.Invoke();
                 PerformClick();
                 return true;
         }

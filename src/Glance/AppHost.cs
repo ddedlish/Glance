@@ -547,6 +547,7 @@ internal sealed partial class AppHost : ApplicationContext
         m.Item("Bluetooth", FlyoutForm.OpenBluetoothSettings);
         m.Item("Что нового", () => Ui.Post(WhatsNewForm.ShowWindow));
         m.Item("Поддержать автора ♥", ProUi.Donate);
+        m.Item("Поддержать через ЮMoney", ProUi.DonateYooMoney);
         m.Item("Настройки Glance", OpenSettings);
         m.Separator();
         m.Item("Выход", ExitApp);

@@ -240,6 +240,9 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         var tip = new FlatButton(sc, "Поддержать ♥");
         tip.Click += (_, _) => ProUi.Donate();
         Row("Пожертвование — по желанию", "Любая сумма на Boosty. Glance остаётся бесплатным, ничего не блокируется", tip);
+        var tipYoo = new FlatButton(sc, "ЮMoney");
+        tipYoo.Click += (_, _) => ProUi.DonateYooMoney();
+        Row("Или переводом на ЮMoney", "Любая сумма с карты или кошелька ЮMoney", tipYoo);
 
         // Pro control: real control when active, otherwise a «Pro» button that explains what it unlocks.
         Control ProOnly(Control real, string feature)
@@ -380,6 +383,9 @@ internal sealed class SettingsForm : Form, IGlassLayer, IMessageFilter
         var donate = new FlatButton(sc, "Поддержать ♥", primary: true);
         donate.Click += (_, _) => ProUi.Donate();
         Row("Поддержать автора", "Необязательное пожертвование любой суммой на Boosty — на развитие Glance и версии для Android", donate);
+        var donateYoo = new FlatButton(sc, "ЮMoney");
+        donateYoo.Click += (_, _) => ProUi.DonateYooMoney();
+        Row("Поддержать через ЮMoney", "Перевод любой суммой с карты или кошелька", donateYoo);
         var author = new FlatButton(sc, "Steam");
         author.Click += (_, _) => AppInfo.OpenUrl(AppInfo.AuthorUrl);
         Row("Автор — ddedlish", "Glance © 2026 ddedlish. Без рекламы, без сбора данных", author);

@@ -8,6 +8,10 @@ internal static class ProUi
     /// <summary>Optional donation: the same Boosty page, any amount, unlocks nothing and asks for nothing.</summary>
     public static void Donate() => AppInfo.OpenUrl(BuyUrl);
 
+    /// <summary>The second way to donate: a YooMoney transfer, any amount, from a card or a wallet.</summary>
+    public const string YooMoneyUrl = "https://yoomoney.ru/to/4100119618332005";
+    public static void DonateYooMoney() => AppInfo.OpenUrl(YooMoneyUrl);
+
     public static readonly string[] Features =
     {
         "Виджет на рабочем столе с зарядом всех устройств",
