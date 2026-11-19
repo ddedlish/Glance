@@ -61,6 +61,7 @@ internal static class ConnectPopup
     static void Remove(PopupView v)
     {
         if (ReferenceEquals(_view, v)) _view = null;
+        Android.Util.Log.Info("Glance", $"popup removed after {SystemClock.UptimeMillis() - v.Born} ms");
         try { _wm?.RemoveViewImmediate(v); } catch { }
     }
 }
@@ -78,6 +79,7 @@ internal sealed class PopupView : View
 
     const int ShowMs = 7000;
     public string Key => _a.Key;
+    public long Born => _t0;
     public float CardHeightDp => _a.HasParts || _a.Profile.Buds != BudsSource.None ? 178 : 96;
 
     public PopupView(Context c, Accessory a, Action remove) : base(c)

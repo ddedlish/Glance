@@ -87,7 +87,7 @@ public sealed class GlanceService : Service
             {
                 var b = _dev?.Connected.FirstOrDefault(a => a.HasParts);
                 Android.Util.Log.Info("Glance", $"announce test: {(b is null ? "no earbuds" : b.DisplayName)}");
-                if (b is not null) Announce(b, force: true);
+                if (b is not null) { Announce(b, force: true); Sounds.Play(this, Cue.Connect); }
             }, 900);
         return StartCommandResult.Sticky;
     }
@@ -134,10 +134,42 @@ public sealed class GlanceService : Service
     {
         if (_dev is null) return;
         var now = _dev.Connected.Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
-        if (_known is null) { _known = now; return; }
+        if (_known is null) { _known = now; Levels(chime: false); return; }
+        bool came = false;
         foreach (var a in _dev.Connected)
-            if (!_known.Contains(a.Key)) Announce(a);
+            if (!_known.Contains(a.Key)) { Announce(a); came = true; }
+        bool left = _known.Any(k => !now.Contains(k));
         _known = now;
+        if (came) Sounds.Play(this, Cue.Connect);
+        else if (left) Sounds.Play(this, Cue.Disconnect);
+        Levels(chime: !came);
+    }
+
+    // ───────── sound cues: low battery and fully charged, once per cycle ─────────
+
+    const int LowAt = 20;
+    readonly HashSet<string> _low = new(StringComparer.Ordinal), _full = new(StringComparer.Ordinal), _seen = new(StringComparer.Ordinal);
+
+    void Levels(bool chime)
+    {
+        if (_dev is null) return;
+        Cue? cue = null;
+        foreach (var a in _dev.Connected)
+        {
+            // a device seen for the first time (or after a restart) only sets the state: no chime for old news
+            bool fresh = _seen.Add(a.Key);
+            if (a.WeakestLevel is int w)
+            {
+                if (!a.Charging && w <= LowAt) { if (_low.Add(a.Key) && !fresh) cue ??= Cue.Low; }
+                else if (a.Charging || w >= LowAt + 5) _low.Remove(a.Key); // charged again: next drop chimes again
+            }
+            if (a.Level is int l)
+            {
+                if (a.Charging && l >= 100) { if (_full.Add(a.Key) && !fresh) cue = Cue.Full; }
+                else if (!a.Charging || l <= 95) _full.Remove(a.Key);
+            }
+        }
+        if (chime && cue is Cue c) Sounds.Play(this, c);
     }
 
     void Announce(Accessory a, bool force = false)

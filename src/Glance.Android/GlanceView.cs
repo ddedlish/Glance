@@ -55,13 +55,17 @@ internal sealed class GlanceView : View
     public bool ShadeOn { get; set; } = true;
     public event Action<bool>? ShadeToggled;
 
+    /// <summary>«Звуки» switch: chimes on connect, disconnect, low battery and full charge.</summary>
+    public bool SoundsOn { get; set; } = true;
+    public event Action<bool>? SoundsToggled;
+
     /// <summary>False until «Поверх других приложений» is allowed: a banner offers the connect popup.</summary>
     public bool PopupAllowed { get; set; } = true;
     public event Action? PopupPermissionRequested;
     RectF _popR = new();
 
     // hit areas
-    RectF _heroR = new(), _permR = new(), _updR = new(), _shadeR = new();
+    RectF _heroR = new(), _permR = new(), _updR = new(), _shadeR = new(), _soundR = new();
 
     public GlanceView(Context c, Devices dev) : base(c)
     {
@@ -95,6 +99,7 @@ internal sealed class GlanceView : View
         if (list.Count == 0) y += 200;
         else y += 28 + list.Sum(a => (a.HasParts ? BudsH : CardH) + Gap);
         y += 28 + ShadeH + Gap;
+        y += ShadeH + Gap; // «Звуки»
         y += 40;
         return Dp(y) + BottomInset;
     }
@@ -220,10 +225,14 @@ internal sealed class GlanceView : View
         }
 
         y += Dp(28);
-        Section(canvas, "Шторка", y);
+        Section(canvas, "Шторка и звуки", y);
         _shadeR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(ShadeH));
         var sr = _shadeR;
         Shift(canvas, idx++, () => DrawShadeRow(canvas, sr));
+        y += Dp(ShadeH + Gap);
+        _soundR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(ShadeH));
+        var snr = _soundR;
+        Shift(canvas, idx++, () => DrawSoundRow(canvas, snr));
 
         if (Animating || list.Any(a => a.Charging) || (hero?.Charging ?? false)) PostInvalidateOnAnimation();
         if (!_drawnOnce) { _drawnOnce = true; Android.Util.Log.Info("Glance", $"drawn: {list.Count} devices, demo={_dev.Demo}"); }
@@ -231,7 +240,60 @@ internal sealed class GlanceView : View
 
     bool _drawnOnce;
 
-    long _switchT0 = -10_000;
+    long _switchT0 = -10_000, _soundT0 = -10_000;
+
+    /// <summary>«Звуки»: a speaker whose waves ripple out for a moment after the switch is flipped.</summary>
+    void DrawSoundRow(Canvas c, RectF r)
+    {
+        Glass(c, r, Dp(22));
+        var tile = new RectF(r.Left + Dp(16), r.Top + Dp(16), r.Left + Dp(56), r.Top + Dp(56));
+        var col = AColor.Argb(255, 255, 94, 135);
+        using (var tp = new Paint(PaintFlags.AntiAlias))
+        {
+            tp.SetShader(new LinearGradient(tile.Left, tile.Top, tile.Right, tile.Bottom, Palette.Mix(col, AColor.White, 0.2f), Palette.Mix(col, AColor.Black, 0.1f), Shader.TileMode.Clamp!));
+            c.DrawRoundRect(tile, Dp(12), Dp(12), tp);
+        }
+        float cx = tile.Left + Dp(15), cy = tile.CenterY();
+        using (var sp = new Paint(PaintFlags.AntiAlias) { Color = AColor.White })
+        {
+            // speaker: a small box and a cone
+            using var path = new Path();
+            path.MoveTo(cx - Dp(6), cy - Dp(3.5f));
+            path.LineTo(cx - Dp(2), cy - Dp(3.5f));
+            path.LineTo(cx + Dp(3), cy - Dp(8));
+            path.LineTo(cx + Dp(3), cy + Dp(8));
+            path.LineTo(cx - Dp(2), cy + Dp(3.5f));
+            path.LineTo(cx - Dp(6), cy + Dp(3.5f));
+            path.Close();
+            c.DrawPath(path, sp);
+        }
+        using (var wp = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Dp(2), StrokeCap = Paint.Cap.Round })
+        {
+            wp.SetStyle(Paint.Style.Stroke);
+            float since = (Now - _soundT0) / 1000f;
+            for (int i = 0; i < 2; i++)
+            {
+                float rr = Dp(6 + i * 5);
+                int alpha = SoundsOn ? 255 : 90;
+                if (SoundsOn && since < 1.2f)
+                {
+                    // a ripple runs outward through the two waves after switching on
+                    float ph = Math.Clamp(since * 2.4f - i * 0.35f, 0, 1);
+                    alpha = (int)(255 * (0.35f + 0.65f * MathF.Sin(ph * MathF.PI * 0.5f)));
+                    rr += Dp(2) * MathF.Sin(ph * MathF.PI);
+                }
+                wp.Color = AColor.Argb(alpha, 255, 255, 255);
+                c.DrawArc(new RectF(cx + Dp(3) - rr, cy - rr, cx + Dp(3) + rr, cy + rr), -45, 90, false, wp);
+            }
+            if (!SoundsOn) // muted: a slash across the speaker
+            {
+                wp.Color = AColor.White;
+                c.DrawLine(cx - Dp(7), cy - Dp(9), cx + Dp(13), cy + Dp(9), wp);
+            }
+        }
+        DrawSwitch(c, r, tile, "Звуки", SoundsOn ? "Подключение и заряд" : "Выключено", SoundsOn, _soundT0);
+        if (Now - _soundT0 < 1300) PostInvalidateOnAnimation();
+    }
 
     /// <summary>Glass row with an iOS-style switch: the knob glides and the track fills with colour.</summary>
     void DrawShadeRow(Canvas c, RectF r)
@@ -252,13 +314,18 @@ internal sealed class GlanceView : View
             rp.Color = AColor.White;
             c.DrawArc(rb, -90, 250, false, rp);
         }
-        float tx = tile.Right + Dp(14), sw = Dp(52), sh = Dp(32);
-        Text(c, "Заряд в шторке", tx, r.Top + Dp(32), Dp(16), _p.Text, bold: true, maxW: r.Right - tx - sw - Dp(30));
-        Text(c, ShadeOn ? "Виден всегда, даже когда Glance закрыт" : "Выключено", tx, r.Top + Dp(52), Dp(12.5f), _p.Sub, maxW: r.Right - tx - sw - Dp(30));
+        DrawSwitch(c, r, tile, "Заряд в шторке", ShadeOn ? "Всегда, даже в фоне" : "Выключено", ShadeOn, _switchT0);
+    }
 
-        float k = Math.Clamp((Now - _switchT0) / 260f, 0, 1);
+    void DrawSwitch(Canvas c, RectF r, RectF tile, string title, string subtitle, bool isOn, long t0)
+    {
+        float tx = tile.Right + Dp(14), sw = Dp(52), sh = Dp(32);
+        Text(c, title, tx, r.Top + Dp(32), Dp(16), _p.Text, bold: true, maxW: r.Right - tx - sw - Dp(30));
+        Text(c, subtitle, tx, r.Top + Dp(52), Dp(12.5f), _p.Sub, maxW: r.Right - tx - sw - Dp(30));
+
+        float k = Math.Clamp((Now - t0) / 260f, 0, 1);
         k = 1 - MathF.Pow(1 - k, 3);
-        float on = ShadeOn ? k : 1 - k;
+        float on = isOn ? k : 1 - k;
         var track = new RectF(r.Right - Dp(18) - sw, r.CenterY() - sh / 2, r.Right - Dp(18), r.CenterY() + sh / 2);
         using (var t = new Paint(PaintFlags.AntiAlias) { Color = Palette.Mix(_p.Track, Palette.Green, on) })
             c.DrawRoundRect(track, sh / 2, sh / 2, t);
@@ -642,6 +709,13 @@ internal sealed class GlanceView : View
                     ShadeOn = !ShadeOn;
                     _switchT0 = Now;
                     ShadeToggled?.Invoke(ShadeOn);
+                    Invalidate();
+                }
+                else if (_soundR.Contains(x, y))
+                {
+                    SoundsOn = !SoundsOn;
+                    _soundT0 = Now;
+                    SoundsToggled?.Invoke(SoundsOn);
                     Invalidate();
                 }
                 PerformClick();

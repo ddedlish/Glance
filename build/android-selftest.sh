@@ -84,18 +84,23 @@ popup() { # name — the glass card that slides up over any app the moment earbu
   adb shell cmd uimode night yes >/dev/null 2>&1
   adb shell am force-stop $PKG
   adb logcat -c
-  adb shell am start -n "$ACT" --ez demo true --ez popup true >/dev/null 2>&1
-  sleep 1.3
+  adb shell am start -W -n "$ACT" --ez demo true --ez popup true >/dev/null 2>&1
+  sleep 0.6
   adb shell input keyevent KEYCODE_HOME
-  sleep 1.5
+  # wait for the card itself (the service shows it ~1 s after start), then let it slide in
+  for k in $(seq 1 30); do adb logcat -d -s Glance:I | grep -q "popup shown:" && break; sleep 0.3; done
+  sleep 1.2
   N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$name")"
   local win; win=$(adb shell dumpsys window windows 2>/dev/null | grep -cE "ty=APPLICATION_OVERLAY|TYPE_APPLICATION_OVERLAY|type=2038" )
   sleep 1.5
   N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s-2.png" $N "$name")"
-  adb logcat -d -s Glance:I | grep -E "popup|announce" | sed 's/^/  /' >> "$REPORT"
   note "$name: окон поверх приложений: ${win:-?}"
   if adb logcat -d -s Glance:I | grep -q "popup shown:"; then note "$name: окно при подключении показано"
-  else fail "$name: окно при подключении не появилось"; adb logcat -d -s Glance:* | tail -20 >> "$REPORT"; adb shell appops get $PKG SYSTEM_ALERT_WINDOW >> "$REPORT" 2>&1; fi
+  else fail "$name: окно при подключении не появилось"; adb shell appops get $PKG SYSTEM_ALERT_WINDOW >> "$REPORT" 2>&1; fi
+  adb logcat -d -s Glance:I | grep -E "popup|announce|sound" | sed 's/^/  /' | tail -12 >> "$REPORT"
+  if adb logcat -d -s Glance:I | grep -qE "sound: Connect (played|skipped)"; then note "$name: звук подключения обработан"
+  else fail "$name: звук подключения не обработан"; fi
+  if adb logcat -d -s Glance:E | grep -q "sound failed"; then fail "$name: звук не воспроизвёлся"; adb logcat -d -s Glance:E | grep "sound failed" | head -3 >> "$REPORT"; fi
   if adb logcat -d | grep -E "FATAL EXCEPTION" >/dev/null; then fail "$name: падение"; adb logcat -d | grep -A30 "FATAL EXCEPTION" | head -60 >> "$REPORT"; fi
 }
 

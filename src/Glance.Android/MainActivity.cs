@@ -55,6 +55,12 @@ public sealed class MainActivity : Activity
             }
             catch (Exception e) { Log.Error("Android overlay settings", e); }
         };
+        _view.SoundsOn = Sounds.Enabled(this);
+        _view.SoundsToggled += on =>
+        {
+            Sounds.SetEnabled(this, on);
+            if (on) Sounds.Play(this, Cue.Connect, preview: true); // a taste of the chime
+        };
         _view.ShadeToggled += on =>
         {
             GlanceService.SetEnabled(this, on);
