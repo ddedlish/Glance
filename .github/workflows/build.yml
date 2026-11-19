@@ -186,7 +186,7 @@ jobs:
           IFS=. read -r va vb vc <<< "${{ needs.version.outputs.v }}" &&
           dotnet publish Glance.Android.csproj -c Release -f net10.0-android
           -p:Version=${{ needs.version.outputs.v }} -p:GlanceUpdateRepo=${{ github.repository_owner }}/Glance-Releases+${{ github.repository }}
-          -p:AndroidSdkDirectory=$ANDROID_HOME -p:AcceptAndroidSDKLicenses=true -p:ApplicationVersion=$((va*10000+vb*100+vc)) $SIGN_ARGS -o ../../outa
+          -p:AndroidSdkDirectory=$ANDROID_HOME -p:AcceptAndroidSDKLicenses=true -p:ApplicationVersion=$((va*10000+vb*100+vc)) $SIGN_ARGS -o ../../outa -v:n 2>&1 | tail -n 400; test ${PIPESTATUS[0]} -eq 0
       - name: Package
         run: |
           ls -la outa
