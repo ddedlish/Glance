@@ -221,17 +221,18 @@ internal sealed class SettingsView : GlassView
     public bool NotifyOn { get; set; } = true;
     public bool AutoUpdateOn { get; set; } = true;
     public bool PopupAllowed { get; set; } = true;
+    public int WidgetCount { get; set; }
     public int LowAt { get; set; } = 20;
     public int Theme { get; set; }
     public string VersionText { get; set; } = "";
 
-    public event Action? BackRequested, PopupRequested, SourceRequested, AuthorRequested, DonateRequested;
+    public event Action? BackRequested, PopupRequested, SourceRequested, AuthorRequested, DonateRequested, WidgetRequested;
     public event Action<bool>? ShadeToggled, SoundsToggled, NotifyToggled, AutoUpdateToggled;
     public event Action<int>? LowAtChanged, ThemeChanged;
 
     static readonly string[] ThemeNames = { "Системная", "Тёмная", "Светлая" };
 
-    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _autoR = new(), _popR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new(), _authorR = new(), _donateR = new();
+    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _autoR = new(), _popR = new(), _widgetR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new(), _authorR = new(), _donateR = new();
     long _shadeT0 = -10_000, _soundT0 = -10_000, _notifyT0 = -10_000, _autoT0 = -10_000, _lowT0 = -10_000, _themeT0 = -10_000;
     float _lowFrom, _themeFrom;
     bool _drawnOnce;
@@ -245,7 +246,7 @@ internal sealed class SettingsView : GlassView
 
     const float Gap = 12, RowH = 72, SegCardH = 116, AboutH = 240, Head = 28;
 
-    float ContentHeight() => Dp(TopInset / _d + 20 + 96 + 7 * Head + 5 * (RowH + Gap) + 2 * (SegCardH + Gap) + AboutH + Gap + 40) + BottomInset;
+    float ContentHeight() => Dp(TopInset / _d + 20 + 96 + 8 * Head + 6 * (RowH + Gap) + 2 * (SegCardH + Gap) + AboutH + Gap + 40) + BottomInset;
 
     protected override void OnMeasure(int widthMeasureSpec, int heightMeasureSpec)
     {
@@ -303,6 +304,14 @@ internal sealed class SettingsView : GlassView
         _popR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(RowH));
         var pr = _popR;
         Shift(canvas, idx++, () => DrawPopupRow(canvas, pr));
+        y += Dp(RowH + Gap);
+
+        // ── home-screen widget
+        y += Dp(Head);
+        Section(canvas, "Рабочий стол", y);
+        _widgetR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(RowH));
+        var wr = _widgetR;
+        Shift(canvas, idx++, () => DrawWidgetRow(canvas, wr));
         y += Dp(RowH + Gap);
 
         // ── low battery threshold
@@ -577,6 +586,40 @@ internal sealed class SettingsView : GlassView
         else Chevron(c, r.Right - Dp(24), r.CenterY(), _p.Sub);
     }
 
+    /// <summary>«Виджет Glance»: placed (green check) or a tap to put it on the home screen.</summary>
+    void DrawWidgetRow(Canvas c, RectF r)
+    {
+        Glass(c, r, Dp(22));
+        var tile = new RectF(r.Left + Dp(16), r.Top + Dp(16), r.Left + Dp(56), r.Top + Dp(56));
+        ColorTile(c, tile, AColor.Argb(255, 48, 176, 199), (cx, cy) =>
+        {
+            // a small glass pane with a ring and two liquid bars
+            using var p = new Paint(PaintFlags.AntiAlias) { Color = AColor.White, StrokeWidth = Dp(1.8f), StrokeCap = Paint.Cap.Round };
+            p.SetStyle(Paint.Style.Stroke);
+            c.DrawRoundRect(new RectF(cx - Dp(12), cy - Dp(9), cx + Dp(12), cy + Dp(9)), Dp(4), Dp(4), p);
+            c.DrawCircle(cx - Dp(5.5f), cy, Dp(3.6f), p);
+            p.StrokeWidth = Dp(2.2f);
+            c.DrawLine(cx + Dp(1), cy - Dp(2.5f), cx + Dp(8), cy - Dp(2.5f), p);
+            c.DrawLine(cx + Dp(1), cy + Dp(3), cx + Dp(5), cy + Dp(3), p);
+        });
+        float tx = tile.Right + Dp(14);
+        Text(c, "Виджет Glance", tx, r.Top + Dp(32), Dp(16), _p.Text, bold: true, maxW: r.Right - tx - Dp(44));
+        Text(c, WidgetCount > 0 ? (WidgetCount == 1 ? "На рабочем столе" : $"На рабочем столе: {WidgetCount}") : "Добавить на рабочий стол",
+            tx, r.Top + Dp(52), Dp(12.5f), _p.Sub, maxW: r.Right - tx - Dp(44));
+        if (WidgetCount > 0)
+        {
+            using var ok = new Paint(PaintFlags.AntiAlias) { Color = Palette.Green, StrokeWidth = Dp(2.4f), StrokeCap = Paint.Cap.Round, StrokeJoin = Paint.Join.Round };
+            ok.SetStyle(Paint.Style.Stroke);
+            float x = r.Right - Dp(26), y = r.CenterY();
+            using var path = new Path();
+            path.MoveTo(x - Dp(6), y);
+            path.LineTo(x - Dp(1.5f), y + Dp(5));
+            path.LineTo(x + Dp(7), y - Dp(5));
+            c.DrawPath(path, ok);
+        }
+        else Chevron(c, r.Right - Dp(24), r.CenterY(), _p.Sub);
+    }
+
     void DrawAbout(Canvas c, RectF r)
     {
         Glass(c, r, Dp(22));
@@ -709,6 +752,7 @@ internal sealed class SettingsView : GlassView
                     AutoUpdateToggled?.Invoke(AutoUpdateOn);
                 }
                 else if (_popR.Contains(x, y)) PopupRequested?.Invoke();
+                else if (_widgetR.Contains(x, y)) { Tick(); WidgetRequested?.Invoke(); }
                 else if (Grow(_lowSeg, Dp(6)).Contains(x, y))
                 {
                     int i = Pick(_lowSeg, x, UserPrefs.LowSteps.Length);

@@ -59,7 +59,8 @@ internal static class ShadeArt
         const float chipW = 64, gap = 6, chipH = 36;
         int fit = Math.Max(1, (int)((wDp + gap) / (chipW + gap)));
         bool more = all.Count > fit;
-        int shown = more ? fit - 1 : all.Count;
+        int shown = more ? Math.Max(1, fit - 1) : all.Count;
+        more = more && shown * (chipW + gap) + 46 <= wDp; // a tiny widget cell: the weakest chip alone
         float top = (CollapsedH - chipH) / 2;
         // the weakest first: the one to charge is always visible
         var order = all.OrderBy(a => a.WeakestLevel is int l ? (a.Charging ? 200 + l : l) : 400).ToList();
@@ -112,6 +113,145 @@ internal static class ShadeArt
         if (all.Count > MaxRows)
             Text(x, $"и ещё {all.Count - MaxRows} — откройте Glance", x.Dp(2), x.Dp(y + 10), 12, x.P.Sub, false, wDp - 4);
         return bmp;
+    }
+
+    // ───────── home-screen widget: a pane of Liquid Glass with the same rows ─────────
+
+    /// <summary>
+    /// The «Glance» widget picture for a w×h dp cell: a frosted glass pane with the app's colour blobs, a header
+    /// («Аксессуары · 5» and who runs out first) and a glass row per accessory, weakest first — as many as fit.
+    /// Too low for a row: the shade chips instead. <paramref name="note"/> replaces the content (no data yet).
+    /// </summary>
+    public static Bitmap Widget(IReadOnlyList<Accessory> all, bool dark, float wDp, float hDp, float density, int lowAt, string? note, float phase)
+    {
+        wDp = Math.Clamp(wDp, 110, 720);
+        hDp = Math.Clamp(hDp, 48, 720);
+        // at most ~1.2 MB: the picture travels to the launcher through Binder, like the shade card
+        float s = Math.Clamp(Math.Min(density, MathF.Sqrt(1_200_000f / (wDp * hDp * 4f))), 1f, 3f);
+        var bmp = Bitmap.CreateBitmap((int)(wDp * s), (int)(hDp * s), Bitmap.Config.Argb8888!)!;
+        using var canvas = new Canvas(bmp);
+        var x = new Ctx { C = canvas, S = s, P = Palette.For(dark) };
+        var pane = new RectF(x.Dp(1), x.Dp(1), x.Dp(wDp - 1), x.Dp(hDp - 1));
+        float rad = x.Dp(Math.Min(24, hDp / 2.4f));
+        Pane(x, pane, rad, phase);
+
+        const float pad = 10;
+        float contentW = wDp - 2 * pad;
+        bool compact = hDp < 96 || wDp < 200;
+        var order = all.OrderBy(a => a.WeakestLevel is int l ? (a.Charging ? 200 + l : l) : 400).ToList();
+
+        if (note is not null || all.Count == 0)
+        {
+            string msg = note ?? "Нет подключённых аксессуаров";
+            float cy = pane.CenterY();
+            float ic = Math.Min(26, hDp * 0.32f);
+            Icons.Draw(canvas, DeviceKind.Unknown, new RectF(x.Dp(pad + 4), cy - x.Dp(ic / 2), x.Dp(pad + 4 + ic), cy + x.Dp(ic / 2)), x.P.Sub, x.Dp(1.7f));
+            float tx = pad + 4 + ic + 10;
+            if (!compact) Text(x, "Glance", x.Dp(tx), cy - x.Dp(4), 14, x.P.Text, true, wDp - tx - pad);
+            Text(x, msg, x.Dp(tx), compact ? cy + x.Dp(5) : cy + x.Dp(13), 12, x.P.Sub, false, wDp - tx - pad);
+            return bmp;
+        }
+
+        if (compact)
+        {
+            // a short or narrow cell: the row of chips with liquid rings, centred in the pane
+            using var chips = Collapsed(order, dark, contentW, density);
+            float chH = contentW * chips.Height / Math.Max(1f, chips.Width);
+            float top = (hDp - chH) / 2;
+            using var bp = new Paint(PaintFlags.FilterBitmap | PaintFlags.AntiAlias);
+            canvas.DrawBitmap(chips, null, new RectF(x.Dp(pad), x.Dp(top), x.Dp(pad + contentW), x.Dp(top + chH)), bp);
+            return bmp;
+        }
+
+        // header: the count on the left, who needs the charger on the right
+        const float headH = 30;
+        float rowsH = hDp - headH - pad;
+        int fit = Math.Max(1, (int)((rowsH + RowGap) / (RowH + RowGap)));
+        int shown = Math.Min(fit, order.Count);
+        var weakest = order.FirstOrDefault(a => !a.Charging && a.WeakestLevel is not null);
+        string right = order.Count > shown ? $"ещё {order.Count - shown} — в Glance"
+            : weakest is { WeakestLevel: int wl } ? (wl <= lowAt ? $"{weakest.DisplayName}: пора зарядить" : $"Первым разрядится {weakest.DisplayName}")
+            : order.Any(a => a.Charging) ? "Заряжается" : "";
+        AColor rightCol = weakest is { WeakestLevel: int w2 } && w2 <= lowAt && order.Count <= shown ? Palette.Level(w2, false) : x.P.Sub;
+        // a tiny Glance ring before the title
+        float ry = x.Dp(19), rx = x.Dp(pad + 9);
+        using (var rp = new Paint(PaintFlags.AntiAlias) { StrokeWidth = x.Dp(2.2f), StrokeCap = Paint.Cap.Round, Color = x.P.Track })
+        {
+            rp.SetStyle(Paint.Style.Stroke);
+            var rb = new RectF(rx - x.Dp(6), ry - x.Dp(6), rx + x.Dp(6), ry + x.Dp(6));
+            canvas.DrawOval(rb, rp);
+            rp.Color = weakest is null ? x.P.Accent : Palette.Level(weakest.WeakestLevel, false);
+            canvas.DrawArc(rb, -90, 360f * Math.Clamp(weakest?.WeakestLevel ?? 75, 3, 100) / 100f, false, rp);
+        }
+        string title = $"Аксессуары · {order.Count}";
+        using (var tp = Font(x, 13.5f, true))
+        {
+            tp.Color = x.P.Text;
+            float titleW = tp.MeasureText(title) / s;
+            canvas.DrawText(title, x.Dp(pad + 21), x.Dp(24), tp);
+            float rw = wDp - pad - (pad + 21 + titleW + 10);
+            if (rw > 40 && right.Length > 0)
+            {
+                using var sp = Font(x, 11.5f, false);
+                sp.Color = rightCol;
+                sp.TextAlign = Paint.Align.Right;
+                canvas.DrawText(Fit(sp, right, x.Dp(rw)), x.Dp(wDp - pad - 2), x.Dp(24), sp);
+            }
+        }
+        // rows, centred in the space left below the header
+        float used = shown * RowH + Math.Max(0, shown - 1) * RowGap;
+        float y = headH + Math.Max(0, (rowsH - used) / 2);
+        for (int i = 0; i < shown; i++)
+        {
+            canvas.Save();
+            canvas.Translate(x.Dp(pad), 0);
+            Row(x, new RectF(0, x.Dp(y), x.Dp(contentW), x.Dp(y + RowH)), order[i], contentW, i + (int)(phase * 3));
+            canvas.Restore();
+            y += RowH + RowGap;
+        }
+        return bmp;
+    }
+
+    /// <summary>The widget's own pane: deep (or pale) glass with soft colour blobs, a sheen across the top and a light rim.</summary>
+    static void Pane(Ctx x, RectF r, float rad, float phase)
+    {
+        var c = x.C;
+        var P = x.P;
+        using var clip = new Path();
+        clip.AddRoundRect(r, rad, rad, Path.Direction.Cw!);
+        c.Save();
+        c.ClipPath(clip);
+        using (var p = new Paint(PaintFlags.AntiAlias))
+        {
+            p.SetShader(new LinearGradient(0, r.Top, 0, r.Bottom, Palette.Alpha(P.BgTop, P.Dark ? 236 : 232), Palette.Alpha(P.BgBottom, P.Dark ? 240 : 236), Shader.TileMode.Clamp!));
+            c.DrawRect(r, p);
+            // the same blobs as the app background; they drift a little with every update, so the widget looks alive
+            float w = r.Width(), h = r.Height(), m = Math.Max(w, h);
+            void Blob(float cx, float cy, float rr, AColor col)
+            {
+                p.SetShader(new RadialGradient(cx, cy, rr, new[] { col.ToArgb(), Palette.Alpha(col, 0).ToArgb() }, null, Shader.TileMode.Clamp!));
+                c.DrawCircle(cx, cy, rr, p);
+            }
+            Blob(r.Left + w * (0.12f + 0.06f * MathF.Sin(phase)), r.Top + h * 0.1f, m * 0.55f, P.BlobA);
+            Blob(r.Left + w * (0.92f - 0.05f * MathF.Cos(phase * 0.7f)), r.Top + h * 0.95f, m * 0.5f, P.BlobB);
+            Blob(r.Left + w * 0.78f, r.Top + h * (0.08f + 0.06f * MathF.Sin(phase * 1.3f)), m * 0.36f, P.BlobC);
+            // the glass: a milky veil, a sheen across the upper part and a diagonal glint
+            p.SetShader(null);
+            p.Color = P.Card;
+            c.DrawRect(r, p);
+            p.SetShader(new LinearGradient(0, r.Top, 0, r.Top + h * 0.45f, AColor.Argb(P.Dark ? 30 : 80, 255, 255, 255), AColor.Argb(0, 255, 255, 255), Shader.TileMode.Clamp!));
+            c.DrawRect(r, p);
+            float gx = r.Left + w * (0.25f + 0.5f * ((phase * 0.37f) % 1f));
+            p.SetShader(new LinearGradient(gx - m * 0.18f, r.Top, gx + m * 0.18f, r.Bottom,
+                new[] { AColor.Argb(0, 255, 255, 255).ToArgb(), AColor.Argb(P.Dark ? 16 : 40, 255, 255, 255).ToArgb(), AColor.Argb(0, 255, 255, 255).ToArgb() }, null, Shader.TileMode.Clamp!));
+            c.DrawRect(r, p);
+        }
+        c.Restore();
+        using var b = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Math.Max(1, x.Dp(1)) };
+        b.SetStyle(Paint.Style.Stroke);
+        b.SetShader(new LinearGradient(0, r.Top, 0, r.Bottom, P.CardBorder.ToArgb(), Palette.Alpha(P.CardBorder, P.Dark ? 20 : 120).ToArgb(), Shader.TileMode.Clamp!));
+        var br = new RectF(r.Left + b.StrokeWidth / 2, r.Top + b.StrokeWidth / 2, r.Right - b.StrokeWidth / 2, r.Bottom - b.StrokeWidth / 2);
+        c.DrawRoundRect(br, rad, rad, b);
     }
 
     static void Row(Ctx x, RectF r, Accessory a, float wDp, int index)

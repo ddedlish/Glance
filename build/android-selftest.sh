@@ -112,6 +112,16 @@ adb logcat -d -s Glance:I | grep -q "drawn: settings" && note "dark-settings: э
 bottom dark-settings-bottom
 settings_back dark-settings-back
 step light-settings no --ez demo true --ez settings true
+widget() { # name, theme — the home-screen widget «Glance» in three cell sizes (drawn by the same code as on the launcher)
+  local name="$1" night="$2"
+  step "$name" "$night" --ez demo true --ez widget true
+  if adb logcat -d -s Glance:I | grep -q "widget preview: 3"; then note "$name: виджет нарисован в трёх размерах"
+  else fail "$name: виджет не нарисован"; fi
+}
+widget dark-widget yes
+widget light-widget no
+if adb shell dumpsys appwidget 2>/dev/null | grep -q "glance.GlanceWidget"; then note "widget: виджет Glance есть в списке виджетов системы"
+else fail "widget: виджет Glance не зарегистрирован в системе"; fi
 popup() { # name — the glass card that slides up over any app the moment earbuds connect
   local name="$1"
   adb shell appops set $PKG SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1

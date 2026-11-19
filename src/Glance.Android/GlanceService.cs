@@ -108,6 +108,7 @@ public sealed class GlanceService : Service
     {
         _dev?.Stop();
         _dev = null;
+        GlanceWidget.Push(this, null); // no live levels without the service: the widget says how to bring them back
         base.OnDestroy();
     }
 
@@ -333,6 +334,7 @@ public sealed class GlanceService : Service
         var n = Compose(out string key);
         if (key == _last) return;
         _last = key;
+        GlanceWidget.Push(this, _dev?.Connected ?? (IReadOnlyList<Accessory>)Array.Empty<Accessory>()); // the home-screen widget follows the shade
         var nm = GetSystemService(NotificationService) as NotificationManager;
         try { nm?.Notify(NotifyId, n); }
         catch (Exception e)

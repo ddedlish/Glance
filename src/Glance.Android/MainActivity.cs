@@ -71,6 +71,13 @@ public sealed class MainActivity : Activity
         _settings.SourceRequested += () => OpenUrl("https://github.com/ddedlish/Glance");
         _settings.AuthorRequested += () => OpenUrl("https://steamcommunity.com/id/ddedlish/");
         _settings.DonateRequested += () => OpenUrl("https://boosty.to/ddedlish");
+        _settings.WidgetCount = GlanceWidget.Count(this);
+        _settings.WidgetRequested += () =>
+        {
+            // the system sheet «Добавить виджет» — or how to do it by hand where the launcher has no such sheet
+            if (!GlanceWidget.RequestPin(this))
+                Toast.MakeText(this, "Удерживайте пустое место на рабочем столе → «Виджеты» → Glance", ToastLength.Long)?.Show();
+        };
         _settings.SoundsToggled += on =>
         {
             Sounds.SetEnabled(this, on);
@@ -92,6 +99,7 @@ public sealed class MainActivity : Activity
         _settings.LowAtChanged += v =>
         {
             UserPrefs.SetLowAt(this, v);
+            GlanceWidget.Redraw(this);
             if (_view is not null) { _view.LowAt = v; _view.Invalidate(); }
             if (Sounds.Enabled(this)) Sounds.Play(this, Cue.Low, preview: true); // hear what will sound at that level
         };
@@ -99,6 +107,7 @@ public sealed class MainActivity : Activity
         {
             UserPrefs.SetTheme(this, t);
             ApplyTheme();
+            GlanceWidget.Redraw(this);
         };
         _dev.Changed += () => { _view?.RequestLayout(); _view?.Invalidate(); };
         _settings.AutoUpdateOn = UserPrefs.AutoUpdate(this);
@@ -122,6 +131,7 @@ public sealed class MainActivity : Activity
         }
         ApplyTheme();
         if (Intent?.GetBooleanExtra("settings", false) == true) ShowSettings(true, animate: false);
+        if (Intent?.GetBooleanExtra("widget", false) == true) ShowWidgetPreview(root);
 
         if (!_dev.Demo && (_dev.MissingPermission || (GlanceService.Enabled(this) && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu
             && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted))) AskPermissions();
@@ -139,6 +149,7 @@ public sealed class MainActivity : Activity
         {
             _settings.ShadeOn = GlanceService.Enabled(this); // the shade may have been dismissed from the notification
             _settings.PopupAllowed = ConnectPopup.Allowed(this);
+            _settings.WidgetCount = GlanceWidget.Count(this); // back from the home screen with the widget placed
             _settings.Invalidate();
         }
         Updater.Resume(this); // back from «Установка неизвестных приложений»
@@ -211,6 +222,28 @@ public sealed class MainActivity : Activity
         if (!p.Dark) flags |= SystemUiFlags.LightStatusBar | SystemUiFlags.LightNavigationBar;
         if (w.DecorView is { } decor) decor.SystemUiVisibility = (StatusBarVisibility)flags;
 #pragma warning restore CA1422, CS0618
+    }
+
+    /// <summary>Self-test: the home-screen widget in three cell sizes (4×2, 4×3, 2×1) over the backdrop, as the launcher would show it.</summary>
+    void ShowWidgetPreview(FrameLayout root)
+    {
+        if (_dev is null) return;
+        float d = Resources?.DisplayMetrics?.Density ?? 2f;
+        var col = new LinearLayout(this) { Orientation = Android.Widget.Orientation.Vertical };
+        col.SetGravity(GravityFlags.CenterHorizontal);
+        col.SetPadding(0, (int)(SystemBar("status_bar_height") + 24 * d), 0, 0);
+        col.SetBackgroundColor(Palette.For(IsDark).BgTop);
+        int n = 0;
+        foreach (var (w, h) in new[] { (300f, 180f), (300f, 250f), (150f, 70f) })
+        {
+            var iv = new ImageView(this);
+            iv.SetImageBitmap(GlanceWidget.Art(this, _dev.Connected, w, h));
+            var lp = new LinearLayout.LayoutParams((int)(w * d), (int)(h * d)) { BottomMargin = (int)(16 * d) };
+            col.AddView(iv, lp);
+            n++;
+        }
+        root.AddView(col, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+        Android.Util.Log.Info("Glance", $"widget preview: {n}");
     }
 
     // ───────── settings page ─────────
