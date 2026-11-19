@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Glance for Android (experimental channel «Опытный»). Shares Glance.Core with the Windows and Linux apps.
-       Build: dotnet workload install android; dotnet publish -c Release -f net8.0-android -->
+       Build: dotnet workload install android; dotnet publish -c Release -f net10.0-android -->
   <PropertyGroup>
-    <TargetFramework>net8.0-android</TargetFramework>
+    <TargetFramework>net10.0-android</TargetFramework>
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
     <Nullable>enable</Nullable>
@@ -12,12 +12,12 @@
     <RootNamespace>Glance.Droid</RootNamespace>
     <AssemblyName>Glance.Android</AssemblyName>
     <ApplicationId>io.github.ddedlish.glance</ApplicationId>
-    <Version>4.2.9</Version>
+    <Version>4.2.10</Version>
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
     <!-- versionCode must grow with every release: 4.2.9 → 40209 -->
     <ApplicationVersion>$([MSBuild]::Add($([MSBuild]::Multiply($([System.Version]::Parse('$(Version)').Major), 10000)), $([MSBuild]::Add($([MSBuild]::Multiply($([System.Version]::Parse('$(Version)').Minor), 100)), $([System.Version]::Parse('$(Version)').Build))))</ApplicationVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
-    <RuntimeIdentifiers>android-arm64;android-arm;android-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <Deterministic>true</Deterministic>
     <InvariantGlobalization>false</InvariantGlobalization>
     <GlanceUpdateRepo></GlanceUpdateRepo>

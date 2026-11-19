@@ -139,15 +139,19 @@ jobs:
       ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
     steps:
       - uses: actions/checkout@v4
+      # .NET 10 (LTS) for Android: net8.0-android is out of support. Pinned by src/Glance.Android/global.json.
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - name: Android workload
-        run: dotnet workload install android
+        working-directory: src/Glance.Android
+        run: dotnet --version && dotnet workload install android
       # One signing key for every release, otherwise Android refuses to update the app in place.
       # Preferred: secrets ANDROID_KEYSTORE_B64 + ANDROID_KEY_PASS. Fallback: a key generated once and kept in the CI cache.
       - name: Restore signing key
@@ -177,10 +181,11 @@ jobs:
           path: ~/.glance-sign
           key: glance-android-signing-v1
       - name: Build APK
+        working-directory: src/Glance.Android
         run: >
-          dotnet publish src/Glance.Android/Glance.Android.csproj -c Release -f net8.0-android
+          dotnet publish Glance.Android.csproj -c Release -f net10.0-android
           -p:Version=${{ needs.version.outputs.v }} -p:GlanceUpdateRepo=${{ github.repository_owner }}/Glance-Releases+${{ github.repository }}
-          -p:AndroidSdkDirectory=$ANDROID_HOME -p:AcceptAndroidSDKLicenses=true $SIGN_ARGS -o outa
+          -p:AndroidSdkDirectory=$ANDROID_HOME -p:AcceptAndroidSDKLicenses=true $SIGN_ARGS -o ../../outa
       - name: Package
         run: |
           ls -la outa
