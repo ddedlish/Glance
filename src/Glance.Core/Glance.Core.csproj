@@ -15,6 +15,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Glance" />
     <InternalsVisibleTo Include="Glance.Tests" />
+    <InternalsVisibleTo Include="Glance.Android" />
     <Using Include="System.Drawing" />
   </ItemGroup>
 

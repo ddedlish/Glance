@@ -129,8 +129,103 @@ jobs:
           name: Glance-${{ matrix.rid }}
           path: dist/*
 
+  # Android (channel «Опытный»): APK + self-test on an emulator (demo/real, dark/light, update over the previous release).
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android workload
+        run: dotnet workload install android
+      # One signing key for every release, otherwise Android refuses to update the app in place.
+      # Preferred: secrets ANDROID_KEYSTORE_B64 + ANDROID_KEY_PASS. Fallback: a key generated once and kept in the CI cache.
+      - name: Restore signing key
+        id: keycache
+        if: github.event_name != 'pull_request' && env.ANDROID_KEYSTORE_B64 == ''
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.glance-sign
+          key: glance-android-signing-v1
+      - name: Signing key
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p ~/.glance-sign
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            echo "$ANDROID_KEYSTORE_B64" | base64 -d > ~/.glance-sign/glance.keystore
+            printf '%s' "$ANDROID_KEY_PASS" > ~/.glance-sign/pass
+          elif [ ! -f ~/.glance-sign/glance.keystore ]; then
+            openssl rand -hex 24 > ~/.glance-sign/pass
+            keytool -genkeypair -v -keystore ~/.glance-sign/glance.keystore -alias glance -keyalg RSA -keysize 4096 -validity 36500 \
+              -storepass "$(cat ~/.glance-sign/pass)" -keypass "$(cat ~/.glance-sign/pass)" -dname "CN=Glance, O=ddedlish"
+          fi
+          echo "SIGN_ARGS=-p:AndroidKeyStore=true -p:AndroidSigningKeyStore=$HOME/.glance-sign/glance.keystore -p:AndroidSigningKeyAlias=glance -p:AndroidSigningStorePass=file:$HOME/.glance-sign/pass -p:AndroidSigningKeyPass=file:$HOME/.glance-sign/pass" >> "$GITHUB_ENV"
+      - name: Save signing key
+        if: github.event_name != 'pull_request' && env.ANDROID_KEYSTORE_B64 == '' && steps.keycache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.glance-sign
+          key: glance-android-signing-v1
+      - name: Build APK
+        run: >
+          dotnet publish src/Glance.Android/Glance.Android.csproj -c Release -f net8.0-android
+          -p:Version=${{ needs.version.outputs.v }} -p:GlanceUpdateRepo=${{ github.repository_owner }}/Glance-Releases+${{ github.repository }}
+          -p:AndroidSdkDirectory=$ANDROID_HOME -p:AcceptAndroidSDKLicenses=true $SIGN_ARGS -o outa
+      - name: Package
+        run: |
+          ls -la outa
+          mkdir dista
+          cp "$(ls outa/*-Signed.apk | head -1)" "dista/Glance-Android-${{ needs.version.outputs.v }}.apk"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Self-test on Android emulator (screenshots)
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash build/android-selftest.sh dista/Glance-Android-${{ needs.version.outputs.v }}.apk selftest-android
+      - name: Publish Android self-test screenshots
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          [ -d selftest-android ] || exit 0
+          cd selftest-android
+          git init -q -b selftest-android
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Android self-test ${{ needs.version.outputs.v }} (${{ github.sha }})"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" selftest-android
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-android
+          path: selftest-android/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: dista/*
+
   release:
-    needs: [version, test, windows, linux]
+    needs: [version, test, windows, linux, android]
     env:
       RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
     runs-on: ubuntu-latest
@@ -189,3 +284,31 @@ jobs:
           body_path: notes.md
           make_latest: true
           files: artifacts/*
+      # Android: a separate pre-release «android-vX.Y.Z» (channel «Опытный»). Never «latest», so the PC updater ignores it.
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk
+      - name: Android pre-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v${{ needs.version.outputs.v }}
+          name: Glance для Android ${{ needs.version.outputs.v }} · Опытный
+          target_commitish: ${{ github.sha }}
+          body_path: notes.md
+          prerelease: true
+          make_latest: false
+          files: apk/*
+      - name: Android pre-release (Glance-Releases)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.RELEASES_TOKEN != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ github.repository_owner }}/Glance-Releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: android-v${{ needs.version.outputs.v }}
+          name: Glance для Android ${{ needs.version.outputs.v }} · Опытный
+          body_path: notes.md
+          prerelease: true
+          make_latest: false
+          files: apk/*
