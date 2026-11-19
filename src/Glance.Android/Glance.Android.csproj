@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Glance for Android (experimental channel «Опытный»). Shares Glance.Core with the Windows and Linux apps.
+  <!-- Glance for Android (channel Alpha). Own version line (5.x), separate from the PC app; changes in CHANGELOG.md next to this file. Shares Glance.Core with the Windows and Linux apps.
        Build: dotnet workload install android; dotnet publish -c Release -f net10.0-android -->
   <PropertyGroup>
     <TargetFramework>net10.0-android</TargetFramework>
@@ -12,10 +12,10 @@
     <RootNamespace>Glance.Droid</RootNamespace>
     <AssemblyName>Glance.Android</AssemblyName>
     <ApplicationId>io.github.ddedlish.glance</ApplicationId>
-    <Version>4.2.10</Version>
+    <Version>5.0.0</Version>
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
-    <!-- versionCode must grow with every release: 4.2.10 → 40210 (CI passes it from the version) -->
-    <ApplicationVersion>40210</ApplicationVersion>
+    <!-- versionCode must grow with every release: 5.0.0 → 50000 (CI passes it from the version) -->
+    <ApplicationVersion>50000</ApplicationVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <Deterministic>true</Deterministic>
@@ -25,7 +25,7 @@
 
   <ItemGroup>
     <AssemblyMetadata Include="GlanceUpdateRepo" Value="$(GlanceUpdateRepo)" />
-    <AssemblyMetadata Include="GlanceChannel" Value="Опытный" />
+    <AssemblyMetadata Include="GlanceChannel" Value="Alpha" />
     <ProjectReference Include="..\Glance.Core\Glance.Core.csproj" />
   </ItemGroup>
 

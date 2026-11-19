@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       v: ${{ steps.v.outputs.v }}
+      av: ${{ steps.v.outputs.av }}
     steps:
       - uses: actions/checkout@v4
       - id: v
@@ -27,6 +28,9 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"
           else v=$(grep -oP '(?<=<Version>)[0-9]+\.[0-9]+\.[0-9]+(?=</Version>)' src/Glance/Glance.csproj | head -1); fi
           echo "v=${v:-2.0.0}" >> "$GITHUB_OUTPUT"
+          # Android has its own version line: <Version> in src/Glance.Android/Glance.Android.csproj
+          av=$(grep -oP '(?<=<Version>)[0-9]+\.[0-9]+\.[0-9]+(?=</Version>)' src/Glance.Android/Glance.Android.csproj | head -1)
+          echo "av=${av:-${v:-2.0.0}}" >> "$GITHUB_OUTPUT"
 
   test:
     runs-on: ubuntu-latest
@@ -129,7 +133,7 @@ jobs:
           name: Glance-${{ matrix.rid }}
           path: dist/*
 
-  # Android (channel «Опытный»): APK + self-test on an emulator (demo/real, dark/light, update over the previous release).
+  # Android: APK + self-test on an emulator (demo/real, dark/light, update over the previous release).
   android:
     needs: version
     runs-on: ubuntu-latest
@@ -185,15 +189,15 @@ jobs:
       - name: Build APK
         working-directory: src/Glance.Android
         run: >
-          IFS=. read -r va vb vc <<< "${{ needs.version.outputs.v }}" &&
+          IFS=. read -r va vb vc <<< "${{ needs.version.outputs.av }}" &&
           dotnet publish Glance.Android.csproj -c Release -f net10.0-android
-          -p:Version=${{ needs.version.outputs.v }} -p:GlanceUpdateRepo=${{ github.repository_owner }}/Glance-Releases+${{ github.repository }}
+          -p:Version=${{ needs.version.outputs.av }} -p:GlanceUpdateRepo=${{ github.repository_owner }}/Glance-Releases+${{ github.repository }}
           -p:AndroidSdkDirectory=$ANDROID_HOME -p:AcceptAndroidSDKLicenses=true -p:ApplicationVersion=$((va*10000+vb*100+vc)) $SIGN_ARGS -o ../../outa -v:n 2>&1 | tail -n 400; test ${PIPESTATUS[0]} -eq 0
       - name: Package
         run: |
           ls -la outa
           mkdir dista
-          cp "$(ls outa/*-Signed.apk | head -1)" "dista/Glance-Android-${{ needs.version.outputs.v }}.apk"
+          cp "$(ls outa/*-Signed.apk | head -1)" "dista/Glance-Android-${{ needs.version.outputs.av }}.apk"
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -209,7 +213,7 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: bash build/android-selftest.sh dista/Glance-Android-${{ needs.version.outputs.v }}.apk selftest-android
+          script: bash build/android-selftest.sh dista/Glance-Android-${{ needs.version.outputs.av }}.apk selftest-android
       - name: Publish Android self-test screenshots
         if: always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
         run: |
@@ -219,7 +223,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add -A
-          git commit -q -m "Android self-test ${{ needs.version.outputs.v }} (${{ github.sha }})"
+          git commit -q -m "Android self-test ${{ needs.version.outputs.av }} (${{ github.sha }})"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" selftest-android
       - uses: actions/upload-artifact@v4
         if: always()
@@ -268,6 +272,11 @@ jobs:
           echo "" >> notes.md
           echo "Автор: [ddedlish](https://steamcommunity.com/id/ddedlish/)" >> notes.md
           cat notes.md
+          # Android release notes: its own changelog next to the project
+          awk -v v="## ${{ needs.version.outputs.av }}" '$0==v{f=1;next} /^## /{if(f)exit} f' repo/src/Glance.Android/CHANGELOG.md > notes-android.md 2>/dev/null || true
+          [ -s notes-android.md ] || cp notes.md notes-android.md
+          if ! grep -q "Автор:" notes-android.md; then echo "" >> notes-android.md; echo "Автор: [ddedlish](https://steamcommunity.com/id/ddedlish/)" >> notes-android.md; fi
+          cat notes-android.md
       # Every push to main publishes/refreshes release v<Version> (bump <Version> in Glance.csproj for a new release).
       - name: GitHub Release
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -292,31 +301,31 @@ jobs:
           body_path: notes.md
           make_latest: true
           files: artifacts/*
-      # Android: a separate pre-release «android-vX.Y.Z» (channel «Опытный»). Never «latest», so the PC updater ignores it.
+      # Android: a separate release «android-vX.Y.Z». Never «latest», so the PC updater (releases/latest) ignores it.
       - uses: actions/download-artifact@v4
         with:
           name: android-apk
           path: apk
-      - name: Android pre-release
+      - name: Android release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-v${{ needs.version.outputs.v }}
-          name: Glance для Android ${{ needs.version.outputs.v }} · Опытный
+          tag_name: android-v${{ needs.version.outputs.av }}
+          name: Glance для Android ${{ needs.version.outputs.av }} Alpha
           target_commitish: ${{ github.sha }}
-          body_path: notes.md
-          prerelease: true
+          body_path: notes-android.md
+          prerelease: false
           make_latest: false
           files: apk/*
-      - name: Android pre-release (Glance-Releases)
+      - name: Android release (Glance-Releases)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.RELEASES_TOKEN != ''
         uses: softprops/action-gh-release@v2
         with:
           repository: ${{ github.repository_owner }}/Glance-Releases
           token: ${{ secrets.RELEASES_TOKEN }}
-          tag_name: android-v${{ needs.version.outputs.v }}
-          name: Glance для Android ${{ needs.version.outputs.v }} · Опытный
-          body_path: notes.md
-          prerelease: true
+          tag_name: android-v${{ needs.version.outputs.av }}
+          name: Glance для Android ${{ needs.version.outputs.av }} Alpha
+          body_path: notes-android.md
+          prerelease: false
           make_latest: false
           files: apk/*

@@ -7,8 +7,8 @@ namespace Glance.Droid;
 internal sealed record UpdateInfo(Version Version, string Url, string Page);
 
 /// <summary>
-/// Android updates come from GitHub pre-releases tagged «android-vX.Y.Z» (channel «Опытный»).
-/// The PC app ignores them: it reads only the latest stable release.
+/// Android updates come from GitHub releases tagged «android-vX.Y.Z» (earlier ones were pre-releases).
+/// The PC app ignores them: it reads only the release marked «latest», which is always the PC one.
 /// </summary>
 internal static class Updates
 {

@@ -1,8 +1,8 @@
 # Glance — заряд аксессуаров в трее
 
-**Автор: [ddedlish](https://steamcommunity.com/id/ddedlish/)** · Windows 10/11 · Linux · Glance Pro
+**Автор: [ddedlish](https://steamcommunity.com/id/ddedlish/)** · Windows 10/11 · Linux · Android · Glance Pro
 
-Glance показывает заряд Bluetooth- и беспроводных аксессуаров в трее рядом с часами: каждому устройству — свой значок-батарейка, которая разряжается вместе с ним. Работает на **Windows 10/11 x64 и x86** и **Linux x64 и ARM64**.
+Glance показывает заряд Bluetooth- и беспроводных аксессуаров в трее рядом с часами: каждому устройству — свой значок-батарейка, которая разряжается вместе с ним. Работает на **Windows 10/11 x64 и x86**, **Linux x64 и ARM64** и **Android 8+**.
 
 **Один файл — это и установщик, и программа.** Ставить .NET или что-то ещё не нужно: среда выполнения уже внутри.
 
@@ -13,6 +13,7 @@ Glance показывает заряд Bluetooth- и беспроводных а
 | `Glance-linux-x64` | Linux, обычные ПК |
 | `Glance-linux-arm64` | Linux на ARM (Raspberry Pi 4/5, ARM-ноутбуки) |
 | `SHA256SUMS` | Контрольные суммы всех файлов |
+| `Glance-Android-<версия>.apk` | Android 8 и новее — в отдельном выпуске «Glance для Android» |
 
 ## Возможности
 
@@ -47,6 +48,13 @@ chmod +x Glance-linux-x64 && ./Glance-linux-x64
 * Удаление: `glance --uninstall`, вместе с настройками — `glance --uninstall --purge`.
 * Трей работает в KDE, XFCE, Cinnamon, MATE, LXQt и Budgie. В **GNOME** нужно расширение *AppIndicator and KStatusNotifierItem Support* (в Ubuntu оно уже установлено). Уведомления работают везде.
 * Источник данных — UPower: Bluetooth-гарнитуры, приёмники Logitech Unifying и Bolt, DualSense и DualShock, Xbox-геймпады (xpadneo), Nintendo, мыши и клавиатуры Apple Magic. Работает только по событиям, без опроса.
+
+### Android
+1. На странице [Releases](https://github.com/ddedlish/Glance/releases) откройте последний выпуск «Glance для Android» и скачайте `Glance-Android-<версия>.apk`.
+2. Откройте файл и разрешите установку из этого источника, если телефон спросит.
+3. При первом запуске разрешите доступ к устройствам поблизости (Bluetooth) — без него Glance не увидит аксессуары.
+* Показывает заряд Bluetooth-наушников, часов, геймпадов и колонок, отдельно левый и правый наушник и кейс у AirPods и моделей с Fast Pair, а также заряд самого телефона.
+* О новых версиях Glance сообщает сам; обновление ставится поверх, настройки сохраняются.
 
 ## Нагрузка на систему
 
