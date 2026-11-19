@@ -21,11 +21,25 @@ internal static class GlassHost
 {
     const int WM_PAINT = 0x000F, WM_ERASEBKGND = 0x0014, WM_PRINTCLIENT = 0x0318;
 
+    /// <summary>
+    /// True while a scroller only moves its content (wheel animation): a control whose picture has not changed
+    /// since it was last rendered is copied from its buffer instead of being drawn again. The backdrop under the rows
+    /// is a uniform tint, so a row looks the same at any scroll position — scrolling costs a few BitBlts per frame
+    /// instead of re-rendering every card, icon and line of text (that was what held scrolling at ~15 fps).
+    /// </summary>
+    public static bool Moving;
+
     /// <summary>Handles WM_PAINT / WM_ERASEBKGND for <paramref name="c"/>. Returns true when the message was consumed.</summary>
     public static bool Handle(Control c, ref Message m, AlphaBuffer buf, Action<Graphics>? self)
     {
         if (m.Msg == WM_ERASEBKGND) { m.Result = (IntPtr)1; return true; }
         if (m.Msg != WM_PAINT || m.WParam != IntPtr.Zero) return false; // WM_PAINT with an HDC (DrawToBitmap) → default path
+        if (!buf.Hooked)
+        {
+            // anything the control itself invalidates (hover, text, value, theme) must be drawn again, never copied
+            buf.Hooked = true;
+            c.Invalidated += (_, _) => buf.Valid = Rectangle.Empty;
+        }
         var hdc = BeginPaint(c.Handle, out var ps);
         try
         {
@@ -35,6 +49,9 @@ internal static class GlassHost
             // Only the invalid part is rendered and copied (a tall scrolling page repaints just what is visible).
             var dirty = Rectangle.Intersect(Rectangle.FromLTRB(ps.rcPaint.Left, ps.rcPaint.Top, ps.rcPaint.Right, ps.rcPaint.Bottom), new Rectangle(Point.Empty, size));
             if (dirty.IsEmpty) return true;
+            if (Moving && buf.Covers(size, dirty)) { buf.Present(hdc, dirty); return true; }
+            // moving: render the whole control once, so the next frames of the scroll are plain copies
+            if (Moving) dirty = new Rectangle(Point.Empty, size);
             using (var g = buf.Begin(size))
             {
                 Painter.Target = glass ? buf.Bitmap : null;
@@ -59,6 +76,7 @@ internal static class GlassHost
                 finally { Painter.SoftText = prev; Painter.Target = null; Painter.TargetDc = IntPtr.Zero; Painter.ClassicDc = IntPtr.Zero; Painter.ClassicGraphics = null; }
             }
             if (!glass) buf.MakeOpaque(dirty);
+            buf.MarkValid(dirty);
             buf.Present(hdc, dirty);
         }
         finally { EndPaint(c.Handle, ref ps); }
@@ -136,6 +154,22 @@ internal sealed class AlphaBuffer : IDisposable
     public Bitmap? Bitmap => _bmp;
     public IntPtr Dc => _dc;
 
+    /// <summary>The part of the buffer that holds the control's current picture (empty after an invalidation).</summary>
+    public Rectangle Valid;
+    internal bool Hooked;
+
+    public bool Covers(Size size, Rectangle r) => _bmp is not null && size == _size && Valid.Contains(r);
+
+    /// <summary>Adds a freshly rendered rectangle to <see cref="Valid"/> (kept as one rectangle: full-width strips join).</summary>
+    public void MarkValid(Rectangle r)
+    {
+        if (Valid.IsEmpty || r.Contains(Valid)) Valid = r;
+        else if (Valid.Contains(r)) { }
+        else if (r.Left <= Valid.Left && r.Right >= Valid.Right && r.Top <= Valid.Bottom && r.Bottom >= Valid.Top)
+            Valid = Rectangle.FromLTRB(r.Left, Math.Min(Valid.Top, r.Top), r.Right, Math.Max(Valid.Bottom, r.Bottom));
+        else Valid = r;
+    }
+
     public Graphics Begin(Size size)
     {
         if (_bmp is null || size != _size) Recreate(size);
@@ -181,6 +215,7 @@ internal sealed class AlphaBuffer : IDisposable
         _old = SelectObject(_dc, _dib);
         _bmp = new Bitmap(size.Width, size.Height, size.Width * 4, PixelFormat.Format32bppPArgb, _bits);
         _size = size;
+        Valid = Rectangle.Empty;
     }
 
     void Free()
@@ -290,6 +325,25 @@ internal sealed class GlassScroller : GlassPanel
         ScrollTo(_offset);
     }
 
+    bool _dragging;
+
+    /// <summary>Dragging the indicator: moves like the wheel animation (unchanged rows copied), one real repaint on release.</summary>
+    void DragTo(int y)
+    {
+        _anim?.Cancel();
+        _anim = null;
+        _dragging = true;
+        _target = Math.Clamp(y, 0, Max);
+        Apply(_target);
+    }
+
+    void EndDrag()
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        Settle();
+    }
+
     /// <summary>Jumps to <paramref name="y"/> (drag, keyboard focus, layout).</summary>
     public void ScrollTo(int y)
     {
@@ -342,7 +396,11 @@ internal sealed class GlassScroller : GlassPanel
                 Content.Top = -v;
                 SendMessageW(Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
                 var all = new Native.RECT { Left = 0, Top = 0, Right = ClientSize.Width, Bottom = ClientSize.Height };
-                RedrawWindow(Handle, ref all, IntPtr.Zero, 0x1 /*INVALIDATE*/ | 0x80 /*ALLCHILDREN*/ | 0x100 /*UPDATENOW*/);
+                // during the wheel animation unchanged rows are copied from their buffers (see GlassHost.Moving);
+                // Settle() draws everything for real once the motion stops
+                GlassHost.Moving = _anim is not null || _dragging;
+                try { RedrawWindow(Handle, ref all, IntPtr.Zero, 0x1 /*INVALIDATE*/ | 0x80 /*ALLCHILDREN*/ | 0x100 /*UPDATENOW*/); }
+                finally { GlassHost.Moving = false; }
             }
             else Content.Top = -v;
         }
@@ -401,10 +459,10 @@ internal sealed class GlassScroller : GlassPanel
             if (!_drag) return;
             var t = Thumb();
             float track = Math.Max(1, _host.ClientSize.Height - t.Height);
-            _host.ScrollTo(_dragOffset + (int)((e.Y - _dragY) / track * _host.Max));
+            _host.DragTo(_dragOffset + (int)((e.Y - _dragY) / track * _host.Max));
         }
 
-        protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); _drag = false; Capture = false; Invalidate(); }
+        protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); _drag = false; Capture = false; _host.EndDrag(); Invalidate(); }
 
         protected override void OnPaint(PaintEventArgs e)
         {

@@ -281,7 +281,13 @@ internal static class Glyphs
     };
 }
 
-/// <summary>One shared 60 fps timer that runs only while an animation is active.</summary>
+/// <summary>
+/// One shared frame clock that runs only while an animation is active. Frames follow the display itself: a background
+/// thread waits for each DWM composition (vsync — 60, 120, 144 Hz…) and hands one frame at a time to the UI thread,
+/// so motion is as smooth as the screen allows and never piles up when a frame is slow. While something moves the
+/// process opts out of Windows power throttling (EcoQoS), which otherwise slows a background tray app's timers and
+/// parks it on efficiency cores — the reason popups slid in at ~15 fps.
+/// </summary>
 internal static class Animator
 {
     public sealed class Anim
@@ -292,30 +298,87 @@ internal static class Animator
 
     static readonly List<Anim> Active = new();
     static readonly Stopwatch Clock = Stopwatch.StartNew();
-    static System.Windows.Forms.Timer? _timer;
+    static System.Windows.Forms.Timer? _timer; // fallback when the vsync pacer cannot run
+    static SynchronizationContext? _ui;
+    static Thread? _pacer;
+    static readonly ManualResetEventSlim Wake = new(false);
+    static volatile bool _running;
+    static int _posted;
 
     public static Anim Run(int ms, Action<float> step, Action? done = null, Func<float, float>? ease = null)
     {
         if (Program.SafeMode.On) ms = 1; // safe mode: no motion
         var a = new Anim { Start = Clock.ElapsedMilliseconds, Duration = Math.Max(1, ms), Step = step, Done = done, Ease = ease ?? EaseOut };
         Active.Add(a);
-        if (_timer is null)
-        {
-            _timer = new System.Windows.Forms.Timer { Interval = 16 };
-            _timer.Tick += (_, _) => Tick();
-        }
-        if (!_timer.Enabled)
-        {
-            // 1 ms system timer resolution only while something animates: even ~60 fps frames instead of 15.6/31 ms jitter.
-            try { timeBeginPeriod(1); _hiRes = true; } catch { }
-            _timer.Start();
-        }
+        if (!_running) StartClock();
         step(0);
         return a;
     }
 
+    static void StartClock()
+    {
+        _running = true;
+        // 1 ms system timer resolution and full speed only while something animates
+        try { timeBeginPeriod(1); _hiRes = true; } catch { }
+        Throttle(false);
+        _ui ??= SynchronizationContext.Current;
+        if (_ui is not null && !_pacerFailed)
+        {
+            try
+            {
+                if (_pacer is null)
+                {
+                    _pacer = new Thread(Pace) { IsBackground = true, Name = "Glance frame clock", Priority = ThreadPriority.AboveNormal };
+                    _pacer.Start();
+                }
+                Wake.Set();
+                return;
+            }
+            catch (Exception e) { _pacerFailed = true; Log.Info("Frame clock: " + e.Message); }
+        }
+        if (_timer is null)
+        {
+            _timer = new System.Windows.Forms.Timer { Interval = 15 };
+            _timer.Tick += (_, _) => Tick();
+        }
+        _timer.Start();
+    }
+
+    static bool _pacerFailed;
+
+    /// <summary>Frame clock thread: one frame per composition, at most one frame waiting on the UI thread.</summary>
+    static void Pace()
+    {
+        var sw = Stopwatch.StartNew();
+        long last = 0;
+        while (true)
+        {
+            Wake.Wait();
+            long t0 = sw.ElapsedTicks;
+            bool vsync = false;
+            try { vsync = DwmFlush() == 0; } catch { }
+            long now = sw.ElapsedTicks;
+            double waited = (now - t0) * 1000.0 / Stopwatch.Frequency, since = (now - last) * 1000.0 / Stopwatch.Frequency;
+            // DwmFlush returns at once when nothing is composed or composition is off: then pace ~60 fps by hand
+            if (!vsync || waited < 1.0)
+            {
+                if (since < 16) Thread.Sleep(Math.Max(1, (int)(16 - since)));
+            }
+            else if (since < 4) Thread.Sleep(2); // never faster than ~250 fps
+            last = sw.ElapsedTicks;
+            if (!_running) continue;
+            if (Interlocked.Exchange(ref _posted, 1) == 1) continue; // the previous frame is still being drawn
+            _ui!.Post(static _ =>
+            {
+                Volatile.Write(ref _posted, 0);
+                Tick();
+            }, null);
+        }
+    }
+
     static void Tick()
     {
+        if (!_running) return;
         long now = Clock.ElapsedMilliseconds;
         foreach (var a in Active.ToArray())
         {
@@ -330,9 +393,40 @@ internal static class Animator
         }
         if (Active.Count == 0)
         {
+            _running = false;
+            Wake.Reset();
             _timer?.Stop();
             if (_hiRes) { try { timeEndPeriod(1); } catch { } _hiRes = false; }
+            Throttle(true);
         }
+    }
+
+    // ── Windows power throttling (EcoQoS) ──
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct PowerThrottlingState { public uint Version, ControlMask, StateMask; }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PowerThrottlingState info, int size);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")] static extern int DwmFlush();
+
+    static bool _throttleFailed;
+
+    /// <summary>allow = false: full speed and exact timers (HighQoS) while animating; true: back to Windows' own choice.</summary>
+    static void Throttle(bool allow)
+    {
+        if (_throttleFailed) return;
+        try
+        {
+            const uint ExecutionSpeed = 0x1, IgnoreTimerResolution = 0x4;
+            int size = System.Runtime.InteropServices.Marshal.SizeOf<PowerThrottlingState>();
+            var st = new PowerThrottlingState { Version = 1, ControlMask = allow ? 0 : ExecutionSpeed | IgnoreTimerResolution, StateMask = 0 };
+            if (SetProcessInformation(GetCurrentProcess(), 4 /*ProcessPowerThrottling*/, ref st, size)) return;
+            // Windows 10: no timer-resolution flag yet
+            st.ControlMask = allow ? 0 : ExecutionSpeed;
+            if (!SetProcessInformation(GetCurrentProcess(), 4, ref st, size)) _throttleFailed = true;
+        }
+        catch { _throttleFailed = true; }
     }
 
     static bool _hiRes;

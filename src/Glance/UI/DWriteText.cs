@@ -27,8 +27,11 @@ internal static class DWriteText
             _dw ??= DWrite.DWriteCreateFactory<IDWriteFactory>(Vortice.DirectWrite.FactoryType.Shared);
             if (_rt is null)
             {
+                // Software: the text is rasterised straight into the window buffer on the CPU. A hardware DC target
+                // uploads the bound pixels to the GPU and reads them back on every string — dozens of stalls per
+                // frame, which is what dragged panel animations and scrolling down to ~15 fps on many PCs.
                 var props = new RenderTargetProperties(
-                    RenderTargetType.Default,
+                    RenderTargetType.Software,
                     new Vortice.DCommon.PixelFormat(Vortice.DXGI.Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied),
                     96, 96, RenderTargetUsage.None, FeatureLevel.Default);
                 _rt = _factory.CreateDCRenderTarget(props);
