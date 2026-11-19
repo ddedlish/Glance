@@ -49,6 +49,7 @@ internal sealed class FlyoutForm : CardForm
         // Cards arrive one after another and their levels count up.
         _openT = 0;
         Animator.Run(560, k => { if (IsDisposed) return; _openT = k; Invalidate(); }, () => _openT = 1, Animator.Linear);
+        Slosh(1f); // the panel springs up — the liquid in the hero ring splashes and settles
     }
 
     public void Rebuild()
@@ -294,6 +295,7 @@ internal sealed class FlyoutForm : CardForm
             using var arc = new Pen(color, th) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
             g.DrawArc(arc, ring, -90, sweep);
         }
+        DrawLiquid(g, RectangleF.Inflate(ring, -(th / 2 + 3 * s), -(th / 2 + 3 * s)), shown, color, a.Charging, s);
         Painter.Text(g, $"{(int)MathF.Round(shown)}%", Fonts.Big(19 * s), t.Text, ring, StringAlignment.Center);
         if (a.Charging)
             Painter.Glyph(g, Glyphs.Bolt, 11 * s, Theme.Alpha(t.Good, (int)(175 + 80 * MathF.Sin(Clock.ElapsedMilliseconds / 260f))),
@@ -309,6 +311,124 @@ internal sealed class FlyoutForm : CardForm
         Painter.Text(g, line, Fonts.Regular(13 * s), t.Text, new RectangleF(tx, r.Y + 46 * s, tw, 20 * s));
         string hint = a.Charging ? a.Link : lvl <= Svc.Low ? "Пора зарядить" : lvl <= 40 ? $"{a.Link} · разрядится первым" : $"{a.Link} · всё в порядке";
         Painter.Text(g, hint, Fonts.Regular(12 * s), lvl <= Svc.Low && !a.Charging ? Theme.VividRed : t.SubText, new RectangleF(tx, r.Y + 70 * s, tw, 18 * s));
+    }
+
+    // ───────────── Liquid inside the hero ring ─────────────
+
+    const int SloshMs = 2800;
+    long _sloshT0 = -100_000;
+    float _sloshPower;
+    bool _hotHero;
+
+    /// <summary>Gives the liquid a push (panel opened, cursor touched or clicked the hero card); it rocks and settles.</summary>
+    void Slosh(float power)
+    {
+        long now = Clock.ElapsedMilliseconds;
+        float left = now - _sloshT0 < SloshMs ? _sloshPower * MathF.Exp(-(now - _sloshT0) / 700f) : 0;
+        _sloshPower = Math.Min(1.4f, left + power);
+        _sloshT0 = now;
+        EnsureTick();
+    }
+
+    bool Sloshing => Clock.ElapsedMilliseconds - _sloshT0 < SloshMs;
+
+    /// <summary>
+    /// The disc inside the ring is filled with translucent «liquid» up to the level: two waves with a bright
+    /// meniscus, rocking after a push and rippling with rising bubbles while charging.
+    /// </summary>
+    void DrawLiquid(Graphics g, RectangleF disc, float level, Color color, bool charging, float s)
+    {
+        if (level <= 0.5f || disc.Width < 8 * s) return;
+        var t = T;
+        long now = Clock.ElapsedMilliseconds;
+        float dt = now - _sloshT0;
+        float push = dt < SloshMs ? _sloshPower * MathF.Exp(-dt / 700f) : 0;
+        float tilt = push * MathF.Sin(dt / 160f) * 7f * s;            // side-to-side rocking
+        float amp = (charging ? 1.7f : 1.1f) * s + push * 2.6f * s;    // wave height
+        float phase = now / (charging ? 300f : 480f);
+        float surface = disc.Bottom - disc.Height * Math.Clamp(level, 0, 100) / 100f;
+
+        var st = g.Save();
+        using (var clip = new System.Drawing.Drawing2D.GraphicsPath())
+        {
+            clip.AddEllipse(disc);
+            g.SetClip(clip, System.Drawing.Drawing2D.CombineMode.Intersect);
+        }
+        // back wave: fainter, out of phase — gives the liquid depth
+        using (var back = WavePath(disc, surface - 1.5f * s, amp * 0.9f, -tilt * 0.6f, -phase * 0.85f + 2.2f, s))
+        using (var b = new SolidBrush(Theme.Alpha(color, t.Dark ? 46 : 40)))
+            g.FillPath(b, back);
+        // front wave: gradient from a brighter surface to a deeper bottom
+        using (var front = WavePath(disc, surface, amp, tilt, phase, s))
+        {
+            var top = new RectangleF(disc.X, Math.Min(surface - amp - Math.Abs(tilt) - 2 * s, disc.Bottom - 2 * s), disc.Width,
+                disc.Bottom - (surface - amp - Math.Abs(tilt) - 2 * s) + 2 * s);
+            if (top.Height < 2 * s) top.Height = 2 * s;
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(top, Theme.Alpha(color, t.Dark ? 120 : 105), Theme.Alpha(color, t.Dark ? 62 : 56),
+                       System.Drawing.Drawing2D.LinearGradientMode.Vertical))
+                g.FillPath(b, front);
+            // meniscus: a thin bright line along the surface
+            using var edge = new System.Drawing.Drawing2D.GraphicsPath();
+            var pts = WavePoints(disc, surface, amp, tilt, phase, s);
+            edge.AddLines(pts);
+            using var pen = new Pen(Color.FromArgb(t.Dark ? 90 : 150, 255, 255, 255), 1.3f * s);
+            g.DrawPath(pen, edge);
+        }
+        // bubbles rise while charging
+        if (charging)
+        {
+            float cx = disc.X + disc.Width / 2;
+            using var bb = new SolidBrush(Color.White);
+            for (int i = 0; i < 5; i++)
+            {
+                float period = 1500 + i * 260;
+                float p = ((now + i * 397) % (long)period) / period;
+                float y = disc.Bottom - 3 * s - p * (disc.Bottom - surface);
+                if (y < surface + 2 * s) continue;
+                float x = cx + (i - 2) * disc.Width * 0.13f + MathF.Sin(i * 1.7f + p * 6.3f) * 2.2f * s;
+                float r = (1.1f + (i % 3) * 0.55f) * s;
+                bb.Color = Color.FromArgb((int)((t.Dark ? 150 : 200) * (1 - p * 0.8f)), 255, 255, 255);
+                g.FillEllipse(bb, x - r, y - r, r * 2, r * 2);
+            }
+        }
+        g.Restore(st);
+    }
+
+    static PointF[] WavePoints(RectangleF disc, float surface, float amp, float tilt, float phase, float s)
+    {
+        float step = Math.Max(1.5f, 2.5f * s), x0 = disc.Left - 2 * s, x1 = disc.Right + 2 * s;
+        int n = (int)MathF.Ceiling((x1 - x0) / step) + 1;
+        var pts = new PointF[n];
+        float cx = disc.X + disc.Width / 2, half = Math.Max(1, disc.Width / 2);
+        for (int i = 0; i < n; i++)
+        {
+            float x = Math.Min(x1, x0 + i * step);
+            float u = (x - disc.Left) / Math.Max(1, disc.Width);
+            float y = surface + tilt * (x - cx) / half
+                + amp * MathF.Sin(u * MathF.PI * 2.6f + phase)
+                + amp * 0.35f * MathF.Sin(u * MathF.PI * 5.1f - phase * 1.4f);
+            pts[i] = new PointF(x, y);
+        }
+        return pts;
+    }
+
+    static System.Drawing.Drawing2D.GraphicsPath WavePath(RectangleF disc, float surface, float amp, float tilt, float phase, float s)
+    {
+        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        var pts = WavePoints(disc, surface, amp, tilt, phase, s);
+        path.AddLines(pts);
+        path.AddLine(pts[^1], new PointF(pts[^1].X, disc.Bottom + 2 * s));
+        path.AddLine(new PointF(pts[^1].X, disc.Bottom + 2 * s), new PointF(pts[0].X, disc.Bottom + 2 * s));
+        path.CloseFigure();
+        return path;
+    }
+
+    bool HitHero(Point p)
+    {
+        if (p.Y < Header * Sc || p.Y > (Header + _viewH) * Sc) return false;
+        foreach (var it in _items)
+            if (it.Section == HeroTag) return Scaled(it.R).Contains(p);
+        return false;
     }
 
     // ───────────── «wow» layer: cursor light, ripples, live ticking ─────────────
@@ -382,7 +502,7 @@ internal sealed class FlyoutForm : CardForm
             _tick.Tick += (_, _) =>
             {
                 if (IsDisposed || !Visible) { _tick!.Stop(); return; }
-                bool alive = _ripples.Count > 0 || LevelTween.Animating || _openT < 1 || Svc.R.ConnectedDevices.Any(a => a.Charging);
+                bool alive = _ripples.Count > 0 || LevelTween.Animating || _openT < 1 || Sloshing || Svc.R.ConnectedDevices.Any(a => a.Charging);
                 if (!alive) { _tick!.Stop(); return; }
                 Invalidate();
             };
@@ -458,6 +578,9 @@ internal sealed class FlyoutForm : CardForm
         if (lightMoved) Invalidate();
         bool hr = HitRecent(e.Location);
         if (hr != _hotRecent) { _hotRecent = hr; Cursor = hr ? Cursors.Hand : Cursors.Default; Invalidate(); }
+        bool hh = HitHero(e.Location);
+        if (hh && !_hotHero) Slosh(0.55f); // touching the hero card makes the liquid wobble
+        _hotHero = hh;
         int hot = HitCard(e.Location);
         string btn = HitButton(e.Location);
         bool more = hot >= 0 && _expand > 0.5f && _items[hot].A?.Key == _expKey && MoreRect(Scaled(_items[hot].R)).Contains(e.Location);
@@ -469,6 +592,7 @@ internal sealed class FlyoutForm : CardForm
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
+        _hotHero = false;
         if (_hot != -1 || _hotBtn.Length > 0) { _hot = -1; _hotBtn = ""; Invalidate(); }
         if (!MenuOpen) SetExpanded(null);
     }
@@ -479,6 +603,7 @@ internal sealed class FlyoutForm : CardForm
         string b = HitButton(e.Location);
         var rect = b switch { "bt" => _btBtn, "gear" => _gearBtn, "upd" => _updBtn, "banner" => _bannerRect, _ => RectangleF.Empty };
         if (rect.IsEmpty && HitCard(e.Location) is int ci and >= 0) rect = Scaled(_items[ci].R);
+        if (rect.IsEmpty && HitHero(e.Location)) Slosh(0.9f);
         if (!rect.IsEmpty) AddRipple(e.Location, rect);
     }
 
