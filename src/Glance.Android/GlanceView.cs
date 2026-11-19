@@ -436,6 +436,9 @@ internal sealed class GlanceView : GlassView
         // bar
         var bar = new RectF(r.Right - Dp(18) - Dp(56), r.Top + Dp(52), r.Right - Dp(18), r.Top + Dp(58));
         Bar(c, bar, shown / 100f, col, a.Charging);
+        // forecast under the bar: «≈ 2 ч 40 мин» or «до 100% · 15 мин» (earbuds have their rings there)
+        if (!phoneCard && !a.HasParts && Forecast.Short(a, _dev.Demo) is string fs)
+            TextRight(c, fs, r.Right - Dp(18), r.Top + Dp(74), Dp(11.5f), _p.Sub, false);
 
         if (a.HasParts)
         {
@@ -568,9 +571,78 @@ internal sealed class GlanceView : GlassView
         Icons.Draw(c, a.Kind, tile, Palette.KindColor(a.Kind), Dp(2));
         Text(c, a.DisplayName, tx + Dp(28), r.Top + Dp(43), Dp(16), _p.Text, bold: true, maxW: tw - Dp(28));
         string line = a.Charging ? "Заряжается" : lvl <= LowAt ? "Пора зарядить" : lvl <= 40 ? "Разрядится первым" : "Всё в порядке";
-        Text(c, line, tx, r.Top + Dp(74), Dp(14.5f), lvl <= LowAt && !a.Charging ? Palette.Red : _p.Text, maxW: tw);
+        var fc = Forecast.Long(a, _dev.Demo);
+        Text(c, line, tx, r.Top + Dp(fc is null ? 74 : 70), Dp(14.5f), lvl <= LowAt && !a.Charging ? Palette.Red : _p.Text, maxW: tw);
+        if (fc is { } f) ForecastLine(c, f.Main, f.Clock, tx, r.Top + Dp(95), tw, shown, col, a.Charging);
         string sub = a.HasParts ? $"Левый {Fmt.Percent(a.Left.Level)} · Правый {Fmt.Percent(a.Right.Level)}" : a.Link;
-        Text(c, sub, tx, r.Top + Dp(98), Dp(12.5f), _p.Sub, maxW: tw);
+        Text(c, sub, tx, r.Top + Dp(fc is null ? 98 : 119), Dp(12.5f), _p.Sub, maxW: tw);
+        if (!_forecastLogged && fc is { } lf) { _forecastLogged = true; Android.Util.Log.Info("Glance", $"forecast: {a.DisplayName} {lf.Main}{lf.Clock}"); }
+    }
+
+    bool _forecastLogged;
+
+    /// <summary>
+    /// «Хватит на ≈ 2 ч 40 мин · до 19:30» with a little hourglass whose sand is the charge: it pours down together
+    /// with the ring when the screen opens. While charging — a bolt and «До полной ≈ 45 мин».
+    /// </summary>
+    void ForecastLine(Canvas c, string main, string clock, float x, float baseline, float maxW, float level, AColor col, bool charging)
+    {
+        var box = new RectF(x, baseline - Dp(12), x + Dp(10), baseline + Dp(1));
+        if (charging) Icons.Bolt(c, new RectF(box.Left - Dp(1), box.Top, box.Right + Dp(1), box.Bottom), Palette.Green);
+        else Hourglass(c, box, level / 100f, col);
+        float tx = box.Right + Dp(7), room = maxW - (tx - x);
+        using var p = TextPaint(Dp(13), true);
+        string s = main + clock;
+        if (p.MeasureText(s) > room) s = main; // narrow screen: the clock time goes first
+        Text(c, s, tx, baseline, Dp(13), Palette.Mix(_p.Text, col, _p.Dark ? 0.25f : 0.35f), bold: true, maxW: room);
+    }
+
+    void Hourglass(Canvas c, RectF b, float frac, AColor col)
+    {
+        frac = Math.Clamp(frac, 0, 1);
+        float cx = b.CenterX(), ym = b.CenterY(), hw = b.Width() / 2, hh = b.Height() / 2 - Dp(1.2f);
+        float top = b.Top + Dp(1.2f), bottom = b.Bottom - Dp(1.2f);
+        using var sand = new Paint(PaintFlags.AntiAlias) { Color = col };
+        // top bulb: what is left (a triangle resting on the neck)
+        float k = MathF.Sqrt(frac), hs = hh * k;
+        if (hs > 0.5f)
+        {
+            using var t = new Path();
+            t.MoveTo(cx - hw * k * 0.86f, ym - hs);
+            t.LineTo(cx + hw * k * 0.86f, ym - hs);
+            t.LineTo(cx, ym);
+            t.Close();
+            c.DrawPath(t, sand);
+        }
+        // bottom bulb: what has run out (a pile on the bottom)
+        float hb = hh * (1 - k);
+        if (hb > 0.5f)
+        {
+            float w2 = hw * 0.86f * (1 - hb / hh);
+            using var t = new Path();
+            t.MoveTo(cx - hw * 0.86f, bottom);
+            t.LineTo(cx + hw * 0.86f, bottom);
+            t.LineTo(cx + w2, bottom - hb);
+            t.LineTo(cx - w2, bottom - hb);
+            t.Close();
+            c.DrawPath(t, sand);
+        }
+        // glass outline and caps
+        using var g = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Dp(1.3f), Color = Palette.Alpha(_p.Text, 200), StrokeCap = Paint.Cap.Round, StrokeJoin = Paint.Join.Round };
+        g.SetStyle(Paint.Style.Stroke);
+        using (var o = new Path())
+        {
+            o.MoveTo(cx - hw, top);
+            o.LineTo(cx + hw, top);
+            o.LineTo(cx, ym);
+            o.LineTo(cx + hw, bottom);
+            o.LineTo(cx - hw, bottom);
+            o.LineTo(cx, ym);
+            o.Close();
+            c.DrawPath(o, g);
+        }
+        c.DrawLine(cx - hw - Dp(1), b.Top + Dp(0.6f), cx + hw + Dp(1), b.Top + Dp(0.6f), g);
+        c.DrawLine(cx - hw - Dp(1), b.Bottom - Dp(0.6f), cx + hw + Dp(1), b.Bottom - Dp(0.6f), g);
     }
 
     void DrawLiquid(Canvas c, RectF disc, float level, AColor color, bool charging, long? sloshT0 = null, float sloshPower = -1)

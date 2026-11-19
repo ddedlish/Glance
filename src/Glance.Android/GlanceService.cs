@@ -106,6 +106,7 @@ public sealed class GlanceService : Service
 
     public override void OnDestroy()
     {
+        Forecast.Save();
         _dev?.Stop();
         _dev = null;
         GlanceWidget.Push(this, null); // no live levels without the service: the widget says how to bring them back
@@ -137,6 +138,7 @@ public sealed class GlanceService : Service
 
     void OnChanged()
     {
+        Forecast.Record(_dev); // battery history for «хватит на ≈ …», also while the app is closed
         Watch();
         ConnectPopup.Refresh(); // the card on screen follows the levels live, without the 400 ms coalescing
         Schedule();
@@ -220,9 +222,10 @@ public sealed class GlanceService : Service
             int lvl = (low ? a.WeakestLevel : a.Level) ?? 0;
             // short title and text: the collapsed notification shows them whole; the details are in the expanded view
             string title = low ? $"{a.DisplayName} — {lvl}%" : $"{a.DisplayName} заряжен";
-            string text = low ? (a.HasParts ? $"Пора зарядить · {Parts(a)}%" : "Пора зарядить") : "Можно снять с зарядки";
+            var fc = low ? Forecast.Long(a, _dev?.Demo ?? false) : null;
+            string text = low ? (a.HasParts ? $"Пора зарядить · {Parts(a)}%" : fc is { } f1 ? $"Пора зарядить · {f1.Main.ToLowerInvariant()}" : "Пора зарядить") : "Можно снять с зарядки";
             string more = low
-                ? $"{(a.HasParts ? $"Пора зарядить: {Parts(a)}%." : $"Пора зарядить: осталось {lvl}%.")} Предупреждение на {LowAt}% и ниже — порог меняется в настройках Glance."
+                ? $"{(a.HasParts ? $"Пора зарядить: {Parts(a)}%." : $"Пора зарядить: осталось {lvl}%.")}{(fc is { } f2 ? $" {f2.Main}{f2.Clock}." : "")} Предупреждение на {LowAt}% и ниже — порог меняется в настройках Glance."
                 : $"Заряд {lvl}% — можно снять с зарядки.";
             var open = new Intent(this, typeof(MainActivity));
             open.AddFlags(ActivityFlags.NewTask | ActivityFlags.SingleTop);

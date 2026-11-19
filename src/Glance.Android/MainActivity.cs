@@ -109,7 +109,7 @@ public sealed class MainActivity : Activity
             ApplyTheme();
             GlanceWidget.Redraw(this);
         };
-        _dev.Changed += () => { _view?.RequestLayout(); _view?.Invalidate(); };
+        _dev.Changed += () => { Forecast.Record(_dev); _view?.RequestLayout(); _view?.Invalidate(); };
         _settings.AutoUpdateOn = UserPrefs.AutoUpdate(this);
         _settings.AutoUpdateToggled += on =>
         {
@@ -196,6 +196,7 @@ public sealed class MainActivity : Activity
     {
         Visible = false;
         _dev?.Stop();
+        Forecast.Save();
         base.OnPause();
     }
 

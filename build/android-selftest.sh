@@ -76,6 +76,8 @@ bottom() { # name — scrolls the screen to the end (phone card, «Заряд в
 }
 
 step dark-demo yes --ez demo true
+if adb logcat -d -s Glance:I | grep -q "forecast:"; then note "dark-demo: прогноз «хватит на…» показан — $(adb logcat -d -s Glance:I | grep -m1 'forecast:' | sed 's/.*forecast: //')"
+else fail "dark-demo: прогноз «хватит на…» не показан"; fi
 shade dark-shade
 bottom dark-demo-bottom
 step dark-demo-update yes --ez demo true --es fakeupdate 9.9.9
