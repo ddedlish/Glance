@@ -1,5 +1,6 @@
 using Android.Graphics;
 using AColor = Android.Graphics.Color;
+using Path = Android.Graphics.Path;
 
 namespace Glance.Droid;
 

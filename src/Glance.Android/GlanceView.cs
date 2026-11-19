@@ -3,6 +3,7 @@ using Android.Graphics;
 using Android.OS;
 using Android.Views;
 using AColor = Android.Graphics.Color;
+using Path = Android.Graphics.Path;
 
 namespace Glance.Droid;
 
