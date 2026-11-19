@@ -216,16 +216,19 @@ public sealed class GlanceService : Service
                 nm.CreateNotificationChannel(ch);
             }
             int lvl = (low ? a.WeakestLevel : a.Level) ?? 0;
-            string title = low ? $"{a.DisplayName}: {lvl}% — пора зарядить" : $"{a.DisplayName} заряжен полностью";
-            string text = low
-                ? (a.HasParts ? $"{Parts(a)}% · предупреждение на {LowAt}%" : $"Осталось {lvl}% · предупреждение на {LowAt}% и ниже")
-                : $"{lvl}% — можно снять с зарядки";
+            // short title and text: the collapsed notification shows them whole; the details are in the expanded view
+            string title = low ? $"{a.DisplayName} — {lvl}%" : $"{a.DisplayName} заряжен";
+            string text = low ? (a.HasParts ? $"Пора зарядить · {Parts(a)}%" : "Пора зарядить") : "Можно снять с зарядки";
+            string more = low
+                ? $"{(a.HasParts ? $"Пора зарядить: {Parts(a)}%." : $"Пора зарядить: осталось {lvl}%.")} Предупреждение на {LowAt}% и ниже — порог меняется в настройках Glance."
+                : $"Заряд {lvl}% — можно снять с зарядки.";
             var open = new Intent(this, typeof(MainActivity));
             open.AddFlags(ActivityFlags.NewTask | ActivityFlags.SingleTop);
             var n = new Notification.Builder(this, BatteryChannel)
                 .SetSmallIcon(StatusIcon(lvl, !low))!
                 .SetContentTitle(title)!
                 .SetContentText(text)!
+                .SetStyle(new Notification.BigTextStyle().BigText(more))!
                 .SetColor(LevelColor(lvl, !low).ToArgb())!
                 .SetAutoCancel(true)!
                 .SetCategory(low ? Notification.CategoryReminder : Notification.CategoryStatus)!
