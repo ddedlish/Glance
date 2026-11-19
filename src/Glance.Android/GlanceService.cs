@@ -82,6 +82,7 @@ public sealed class GlanceService : Service
         else _dev.Refresh();
         Publish();
         Watch();
+        if (!demo) ScheduleUpdateCheck();
         // self-test: show the connect popup for the demo earbuds
         if (demo && intent?.GetBooleanExtra("popup", false) == true)
             _main.PostDelayed(() =>
@@ -284,6 +285,40 @@ public sealed class GlanceService : Service
     }
 
     const string ConnectChannel = "glance-connect";
+
+    // ───────── updates while Glance is closed: «Доступна версия X» in the shade, once per version ─────────
+
+    bool _updScheduled;
+
+    void ScheduleUpdateCheck()
+    {
+        if (_updScheduled) return;
+        _updScheduled = true;
+        _main.PostDelayed(CheckUpdate, 90_000); // not right at boot: let the phone settle first
+    }
+
+    void CheckUpdate()
+    {
+        _updScheduled = false;
+        if (_dev is null) return; // the service has stopped
+        ScheduleNext();
+        if (!UserPrefs.AutoUpdate(this) || MainActivity.Visible || Updater.Busy) return;
+        var prefs = GetSharedPreferences(Prefs, FileCreationMode.Private);
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (now - (prefs?.GetLong("lastUpdateCheck", 0) ?? 0) < 6 * 3600) return;
+        prefs?.Edit()?.PutLong("lastUpdateCheck", now)?.Apply();
+        _ = Task.Run(async () =>
+        {
+            var u = await Updates.CheckAsync().ConfigureAwait(false);
+            if (u is not null) _main.Post(() => Updater.Announce(u));
+        });
+    }
+
+    void ScheduleNext()
+    {
+        _updScheduled = true;
+        _main.PostDelayed(CheckUpdate, 3600_000L); // hourly look at the clock; the network is asked at most every 6 hours
+    }
 
     /// <summary>Adverts can arrive many times a second: coalesce into one update.</summary>
     void Schedule()

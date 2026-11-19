@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Glance.Droid;
 
-internal sealed record UpdateInfo(Version Version, string Url, string Page);
+internal sealed record UpdateInfo(Version Version, string Url, string Page, long Size = 0);
 
 /// <summary>
 /// Android updates come from GitHub releases tagged «android-vX.Y.Z» (earlier ones were pre-releases).
@@ -50,16 +50,20 @@ internal static class Updates
                     any = true;
                     if (!Version.TryParse(tag["android-v".Length..], out var v)) continue;
                     string? apk = null;
+                    long size = 0;
                     if (rel.TryGetProperty("assets", out var assets))
                         foreach (var a in assets.EnumerateArray())
                         {
                             string name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
                             if (name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
+                            {
                                 apk = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
+                                size = a.TryGetProperty("size", out var sz) && sz.TryGetInt64(out long l) ? l : 0;
+                            }
                         }
                     string page = rel.TryGetProperty("html_url", out var h) ? h.GetString() ?? "" : "";
                     if (apk is null || !apk.StartsWith("https://", StringComparison.Ordinal)) continue;
-                    if (best is null || v > best.Version) best = new UpdateInfo(v, apk, page);
+                    if (best is null || v > best.Version) best = new UpdateInfo(v, apk, page, size);
                 }
                 if (!any) continue; // this repo has no Android builds: try the next one
                 return best is not null && Norm(best.Version) > Norm(Current) ? best : null;

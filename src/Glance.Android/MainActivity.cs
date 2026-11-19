@@ -99,10 +99,25 @@ public sealed class MainActivity : Activity
             ApplyTheme();
         };
         _dev.Changed += () => { _view?.RequestLayout(); _view?.Invalidate(); };
+        _settings.AutoUpdateOn = UserPrefs.AutoUpdate(this);
+        _settings.AutoUpdateToggled += on =>
+        {
+            UserPrefs.SetAutoUpdate(this, on);
+            if (on) { GetSharedPreferences(Prefs, FileCreationMode.Private)?.Edit()?.PutLong("lastUpdateCheck", 0)?.Apply(); _ = CheckUpdatesAsync(); }
+        };
+        Updater.Changed += OnUpdaterChanged;
+        Updater.Cleanup();
+        if (Updater.Target is { } pending) _view.Update = pending; // a download started earlier keeps going
 
         if (Intent?.GetBooleanExtra("demo", false) == true) _dev.UseDemo();
         if (Intent?.GetStringExtra("fakeupdate") is { } fake && Version.TryParse(fake, out var fv))
-            _view.Update = new UpdateInfo(fv, "https://github.com/ddedlish/Glance-Releases/releases", "");
+        {
+            _view.Update = new UpdateInfo(fv, Intent?.GetStringExtra("fakeurl") ?? "https://github.com/ddedlish/Glance-Releases/releases", "");
+            // self-test: the banner mid-download (frozen, no network)
+            float fp = Intent?.GetFloatExtra("fakeprogress", -1) ?? -1;
+            if (fp >= 0) Updater.Demo(_view.Update, fp);
+            else if (Intent?.GetStringExtra("fakeurl") is not null) Updater.Go(this, _view.Update); // a real download and check
+        }
         ApplyTheme();
         if (Intent?.GetBooleanExtra("settings", false) == true) ShowSettings(true, animate: false);
 
@@ -124,7 +139,44 @@ public sealed class MainActivity : Activity
             _settings.PopupAllowed = ConnectPopup.Allowed(this);
             _settings.Invalidate();
         }
-        _ = CheckUpdatesAsync();
+        Updater.Resume(this); // back from «Установка неизвестных приложений»
+        if (Intent?.GetBooleanExtra("install", false) == true) { Intent?.RemoveExtra("install"); _ = InstallFromNotice(); }
+        else _ = CheckUpdatesAsync();
+    }
+
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        if (intent is not null) Intent = intent;
+    }
+
+    protected override void OnDestroy()
+    {
+        Updater.Changed -= OnUpdaterChanged;
+        base.OnDestroy();
+    }
+
+    void OnUpdaterChanged()
+    {
+        if (_view is null) return;
+        if (_view.Update is null && Updater.Target is { } t) { _view.Update = t; _view.RequestLayout(); }
+        _view.Invalidate();
+    }
+
+    /// <summary>Tapped «Доступна версия X» / «скачан» in the shade: carry on with the download or the install.</summary>
+    async Task InstallFromNotice()
+    {
+        if (_dev?.Demo == true) return;
+        var u = _view?.Update ?? Updater.Target ?? await Updates.CheckAsync();
+        if (u is null) return;
+        RunOnUiThread(() =>
+        {
+            if (_view is null || IsFinishing) return;
+            _view.Update = u;
+            _view.RequestLayout();
+            _view.Invalidate();
+            Updater.Go(this, u);
+        });
     }
 
     protected override void OnPause()
@@ -280,7 +332,7 @@ public sealed class MainActivity : Activity
 
     async Task CheckUpdatesAsync()
     {
-        if (_dev?.Demo == true || _view is null || _view.Update is not null) return;
+        if (_dev?.Demo == true || _view is null || _view.Update is not null || !UserPrefs.AutoUpdate(this)) return;
         var prefs = GetSharedPreferences(Prefs, FileCreationMode.Private);
         long last = prefs?.GetLong("lastUpdateCheck", 0) ?? 0;
         long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -300,13 +352,8 @@ public sealed class MainActivity : Activity
     void OpenUpdate()
     {
         if (_view?.Update is not { } u) return;
-        try
-        {
-            // The browser downloads the APK; Android then offers to install it over this version (same signature).
-            var i = new Intent(Intent.ActionView, Android.Net.Uri.Parse(u.Url));
-            i.AddFlags(ActivityFlags.NewTask);
-            StartActivity(i);
-        }
-        catch (Exception e) { Log.Error("Android update open", e); }
+        // Glance downloads the APK itself, checks it and hands it to Android's installer (same signature: settings stay)
+        Updater.Go(this, u);
+        _view.Invalidate();
     }
 }

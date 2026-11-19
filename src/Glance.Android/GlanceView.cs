@@ -138,7 +138,8 @@ internal sealed class GlanceView : GlassView
         if (Update is { } up)
         {
             _updR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(BannerH));
-            Shift(canvas, idx++, () => Banner(canvas, _updR, $"Доступна версия {up.Version}", "Нажмите, чтобы скачать и установить", _p.Accent, true));
+            var ur = _updR;
+            Shift(canvas, idx++, () => DrawUpdate(canvas, ur, up));
             y += Dp(BannerH + Gap);
         }
         else _updR = new RectF();
@@ -225,6 +226,86 @@ internal sealed class GlanceView : GlassView
         float angle = 90 * (1 - MathF.Pow(1 - k, 3));
         Gear(c, r.CenterX(), r.CenterY(), r.Width() * 0.27f, angle, _p.Text);
         if (k < 1) PostInvalidateOnAnimation();
+    }
+
+    float _updShown; // the liquid in the banner flows to the real progress instead of jumping
+
+    /// <summary>
+    /// The update banner follows the download: liquid fills the glass from the left with a rippling edge and a sheen
+    /// running through it, then «Установить»; Android's own confirmation follows the tap.
+    /// </summary>
+    void DrawUpdate(Canvas c, RectF r, UpdateInfo up)
+    {
+        string v = Fmt.Ver(up.Version);
+        var st = Updater.Target?.Version == up.Version ? Updater.Stage : UpdateStage.Idle;
+        (string title, string sub, AColor tint) = st switch
+        {
+            UpdateStage.Downloading => ($"Скачивается версия {v}", Updater.Total > 0
+                ? $"{Updater.Mb(Updater.Done)} из {Updater.Mb(Updater.Total)} МБ · {(int)(Updater.Progress * 100)}%" : $"{Updater.Mb(Updater.Done)} МБ", _p.Accent),
+            UpdateStage.Ready => ($"Версия {v} скачана", "Нажмите, чтобы установить", Palette.Green),
+            UpdateStage.Installing => ($"Устанавливается {v}", "Подтвердите обновление", Palette.Green),
+            UpdateStage.NeedPermission => ("Разрешите установку", "Glance → «Разрешить из этого источника»", Palette.Amber),
+            UpdateStage.Failed => ("Обновление не скачалось", Updater.Error.Length > 0 ? Updater.Error : "Нажмите, чтобы повторить", Palette.Red),
+            _ => ($"Доступна версия {v}", "Нажмите, чтобы скачать и установить", _p.Accent),
+        };
+        if (st != UpdateStage.Downloading)
+        {
+            _updShown = st is UpdateStage.Ready or UpdateStage.Installing ? 1 : 0;
+            Banner(c, r, title, sub, tint, st != UpdateStage.Installing);
+            if (st == UpdateStage.Installing) PostInvalidateOnAnimation();
+            return;
+        }
+
+        float target = Updater.Progress;
+        _updShown += (target - _updShown) * 0.18f;
+        if (Math.Abs(target - _updShown) < 0.002f) _updShown = target;
+        float t = Now / 1000f;
+        Glass(c, r, Dp(20));
+        c.Save();
+        using (var clip = new Path())
+        {
+            clip.AddRoundRect(r, Dp(20), Dp(20), Path.Direction.Cw!);
+            c.ClipPath(clip);
+        }
+        // liquid with a rippling front edge
+        float edge = r.Left + r.Width() * _updShown;
+        using (var liquid = new Path())
+        {
+            liquid.MoveTo(r.Left, r.Top);
+            liquid.LineTo(edge, r.Top);
+            for (float yy = r.Top; yy <= r.Bottom + 1; yy += Dp(4))
+            {
+                float k = (yy - r.Top) / r.Height();
+                liquid.LineTo(edge + Dp(4) * MathF.Sin(k * 2 * MathF.PI * 1.3f + t * 5f) * Math.Min(1, _updShown * 8), yy);
+            }
+            liquid.LineTo(r.Left, r.Bottom);
+            liquid.Close();
+            using var lp = new Paint(PaintFlags.AntiAlias);
+            lp.SetShader(new LinearGradient(r.Left, 0, Math.Max(r.Left + 1, edge), 0,
+                Palette.Alpha(tint, _p.Dark ? 40 : 30), Palette.Alpha(tint, _p.Dark ? 110 : 85), Shader.TileMode.Clamp!));
+            c.DrawPath(liquid, lp);
+            // a light sheen sliding through the liquid
+            float sx = r.Left + (r.Width() * 1.4f) * ((t * 0.45f) % 1f) - r.Width() * 0.2f;
+            if (sx < edge)
+            {
+                using var sh = new Paint(PaintFlags.AntiAlias);
+                sh.SetShader(new LinearGradient(sx - Dp(30), 0, sx + Dp(30), 0,
+                    new[] { AColor.Argb(0, 255, 255, 255).ToArgb(), AColor.Argb(_p.Dark ? 60 : 90, 255, 255, 255).ToArgb(), AColor.Argb(0, 255, 255, 255).ToArgb() },
+                    null, Shader.TileMode.Clamp!));
+                c.ClipPath(liquid);
+                c.DrawRect(r, sh);
+            }
+        }
+        c.Restore();
+        // a pulsing dot: work in progress
+        float pulse = 0.5f + 0.5f * MathF.Sin(t * 6f);
+        using (var halo = new Paint(PaintFlags.AntiAlias) { Color = Palette.Alpha(tint, (int)(70 * pulse)) })
+            c.DrawCircle(r.Left + Dp(24), r.CenterY(), Dp(5 + 4 * pulse), halo);
+        using (var dot = new Paint(PaintFlags.AntiAlias) { Color = tint })
+            c.DrawCircle(r.Left + Dp(24), r.CenterY(), Dp(5), dot);
+        Text(c, title, r.Left + Dp(42), r.Top + Dp(27), Dp(15.5f), _p.Text, bold: true, maxW: r.Width() - Dp(60));
+        Text(c, sub, r.Left + Dp(42), r.Top + Dp(47), Dp(12.5f), _p.Sub, maxW: r.Width() - Dp(60));
+        PostInvalidateOnAnimation(); // only while downloading
     }
 
     void Banner(Canvas c, RectF r, string title, string sub, AColor tint, bool chevron)

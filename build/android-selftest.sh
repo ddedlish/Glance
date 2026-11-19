@@ -76,6 +76,23 @@ step dark-demo yes --ez demo true
 shade dark-shade
 bottom dark-demo-bottom
 step dark-demo-update yes --ez demo true --es fakeupdate 9.9.9
+step dark-demo-download yes --ez demo true --es fakeupdate 9.9.9 --ef fakeprogress 0.42
+download() { # name — a real in-app download of the previous release APK: downloaded, checked, refused as not newer
+  local name="$1"
+  if [ -z "$PREV" ]; then note "$name: предыдущей версии нет, пропуск"; return; fi
+  adb shell cmd uimode night yes >/dev/null 2>&1
+  adb shell am force-stop $PKG
+  adb logcat -c
+  adb shell am start -W -n "$ACT" --ez demo true --es fakeupdate 9.9.9 --es fakeurl "$PREV" >/dev/null 2>&1
+  for k in $(seq 1 60); do adb logcat -d -s Glance:I | grep -qE "update: (Failed|Ready|NeedPermission)" && break; sleep 0.5; done
+  sleep 1
+  N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$name")"
+  adb logcat -d -s Glance:I | grep "update:" | sed 's/^/  /' | tail -8 >> "$REPORT"
+  if adb logcat -d -s Glance:I | grep -q "update: downloaded" && adb logcat -d -s Glance:I | grep -q "update: verify"; then note "$name: APK скачан внутри приложения и проверен"
+  else note "$name: скачать APK на эмуляторе не удалось (сеть?)"; fi
+  if adb logcat -d | grep -E "FATAL EXCEPTION" >/dev/null; then fail "$name: падение"; adb logcat -d | grep -A30 "FATAL EXCEPTION" | head -60 >> "$REPORT"; fi
+}
+download dark-demo-download-real
 step light-demo no --ez demo true
 shade light-shade
 

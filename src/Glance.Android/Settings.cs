@@ -11,7 +11,7 @@ namespace Glance.Droid;
 /// <summary>User settings kept in SharedPreferences «glance» (next to «shade» and «sounds»).</summary>
 internal static class UserPrefs
 {
-    const string Name = "glance", PrefLowAt = "lowAt", PrefTheme = "theme", PrefNotify = "batteryNotify";
+    const string Name = "glance", PrefLowAt = "lowAt", PrefTheme = "theme", PrefNotify = "batteryNotify", PrefAutoUpdate = "autoUpdate";
     public static readonly int[] LowSteps = { 10, 15, 20, 25, 30 };
 
     static ISharedPreferences? P(Context c) => c.GetSharedPreferences(Name, FileCreationMode.Private);
@@ -23,6 +23,10 @@ internal static class UserPrefs
     /// <summary>«Уведомления о заряде»: «пора зарядить» and «заряжено полностью» in the shade, once per cycle (default on).</summary>
     public static bool Notify(Context c) => P(c)?.GetBoolean(PrefNotify, true) ?? true;
     public static void SetNotify(Context c, bool on) => P(c)?.Edit()?.PutBoolean(PrefNotify, on)?.Apply();
+
+    /// <summary>«Проверять обновления»: on opening Glance and every few hours from the shade service (default on).</summary>
+    public static bool AutoUpdate(Context c) => P(c)?.GetBoolean(PrefAutoUpdate, true) ?? true;
+    public static void SetAutoUpdate(Context c, bool on) => P(c)?.Edit()?.PutBoolean(PrefAutoUpdate, on)?.Apply();
 
     /// <summary>0 — as the system, 1 — dark, 2 — light.</summary>
     public static int Theme(Context c) => Math.Clamp(P(c)?.GetInt(PrefTheme, 0) ?? 0, 0, 2);
@@ -215,19 +219,20 @@ internal sealed class SettingsView : GlassView
     public bool ShadeOn { get; set; } = true;
     public bool SoundsOn { get; set; } = true;
     public bool NotifyOn { get; set; } = true;
+    public bool AutoUpdateOn { get; set; } = true;
     public bool PopupAllowed { get; set; } = true;
     public int LowAt { get; set; } = 20;
     public int Theme { get; set; }
     public string VersionText { get; set; } = "";
 
     public event Action? BackRequested, PopupRequested, SourceRequested;
-    public event Action<bool>? ShadeToggled, SoundsToggled, NotifyToggled;
+    public event Action<bool>? ShadeToggled, SoundsToggled, NotifyToggled, AutoUpdateToggled;
     public event Action<int>? LowAtChanged, ThemeChanged;
 
     static readonly string[] ThemeNames = { "Системная", "Тёмная", "Светлая" };
 
-    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _popR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new();
-    long _shadeT0 = -10_000, _soundT0 = -10_000, _notifyT0 = -10_000, _lowT0 = -10_000, _themeT0 = -10_000;
+    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _autoR = new(), _popR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new();
+    long _shadeT0 = -10_000, _soundT0 = -10_000, _notifyT0 = -10_000, _autoT0 = -10_000, _lowT0 = -10_000, _themeT0 = -10_000;
     float _lowFrom, _themeFrom;
     bool _drawnOnce;
 
@@ -240,7 +245,7 @@ internal sealed class SettingsView : GlassView
 
     const float Gap = 12, RowH = 72, SegCardH = 116, AboutH = 156, Head = 28;
 
-    float ContentHeight() => Dp(TopInset / _d + 20 + 96 + 6 * Head + 4 * (RowH + Gap) + 2 * (SegCardH + Gap) + AboutH + Gap + 40) + BottomInset;
+    float ContentHeight() => Dp(TopInset / _d + 20 + 96 + 7 * Head + 5 * (RowH + Gap) + 2 * (SegCardH + Gap) + AboutH + Gap + 40) + BottomInset;
 
     protected override void OnMeasure(int widthMeasureSpec, int heightMeasureSpec)
     {
@@ -329,6 +334,14 @@ internal sealed class SettingsView : GlassView
             Segmented(canvas, _themeSeg, ThemeNames, Theme, _themeFrom, _themeT0, _p.Accent);
         });
         y += Dp(SegCardH + Gap);
+
+        // ── updates
+        y += Dp(Head);
+        Section(canvas, "Обновления", y);
+        _autoR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(RowH));
+        var aur = _autoR;
+        Shift(canvas, idx++, () => DrawAutoRow(canvas, aur));
+        y += Dp(RowH + Gap);
 
         // ── about
         y += Dp(Head);
@@ -494,6 +507,42 @@ internal sealed class SettingsView : GlassView
         if (Now - _notifyT0 < 1200) PostInvalidateOnAnimation();
     }
 
+    /// <summary>«Автообновление»: an arrow that drops into a tray when switched on.</summary>
+    void DrawAutoRow(Canvas c, RectF r)
+    {
+        Glass(c, r, Dp(22));
+        var tile = new RectF(r.Left + Dp(16), r.Top + Dp(16), r.Left + Dp(56), r.Top + Dp(56));
+        float since = (Now - _autoT0) / 700f;
+        ColorTile(c, tile, AColor.Argb(255, 52, 199, 89), (cx, cy) =>
+        {
+            using var p = new Paint(PaintFlags.AntiAlias) { Color = AutoUpdateOn ? AColor.White : AColor.Argb(150, 255, 255, 255), StrokeWidth = Dp(2.4f), StrokeCap = Paint.Cap.Round, StrokeJoin = Paint.Join.Round };
+            p.SetStyle(Paint.Style.Stroke);
+            // the arrow falls in from above once after switching on
+            float drop = AutoUpdateOn && since < 1 ? -Dp(10) * (1 - Ease(since)) : 0;
+            c.Save();
+            c.ClipRect(tile);
+            c.DrawLine(cx, cy - Dp(9) + drop, cx, cy + Dp(3) + drop, p);
+            using (var head = new Path())
+            {
+                head.MoveTo(cx - Dp(5), cy - Dp(2) + drop);
+                head.LineTo(cx, cy + Dp(3) + drop);
+                head.LineTo(cx + Dp(5), cy - Dp(2) + drop);
+                c.DrawPath(head, p);
+            }
+            c.Restore();
+            using (var tray = new Path())
+            {
+                tray.MoveTo(cx - Dp(9), cy + Dp(3));
+                tray.LineTo(cx - Dp(9), cy + Dp(9));
+                tray.LineTo(cx + Dp(9), cy + Dp(9));
+                tray.LineTo(cx + Dp(9), cy + Dp(3));
+                c.DrawPath(tray, p);
+            }
+        });
+        DrawSwitch(c, r, tile, "Автообновление", AutoUpdateOn ? "Искать новые версии" : "Выключено", AutoUpdateOn, _autoT0);
+        if (Now - _autoT0 < 800) PostInvalidateOnAnimation();
+    }
+
     /// <summary>The connect popup: allowed (green check) or a hint to allow «Поверх других приложений».</summary>
     void DrawPopupRow(Canvas c, RectF r)
     {
@@ -605,6 +654,13 @@ internal sealed class SettingsView : GlassView
                     _notifyT0 = Now;
                     Tick();
                     NotifyToggled?.Invoke(NotifyOn);
+                }
+                else if (_autoR.Contains(x, y))
+                {
+                    AutoUpdateOn = !AutoUpdateOn;
+                    _autoT0 = Now;
+                    Tick();
+                    AutoUpdateToggled?.Invoke(AutoUpdateOn);
                 }
                 else if (_popR.Contains(x, y)) PopupRequested?.Invoke();
                 else if (Grow(_lowSeg, Dp(6)).Contains(x, y))
