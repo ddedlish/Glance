@@ -115,7 +115,8 @@ internal sealed class GlanceView : GlassView
         return tw.From + (tw.To - tw.From) * (1 - MathF.Pow(1 - t, 3));
     }
 
-    bool Animating => Now - _born < 1400 || _tweens.Values.Any(t => Now - t.T0 < 720) || Now - _sloshT0 < SloshMs;
+    bool Animating => Now - _born < 1400 || _tweens.Values.Any(t => Now - t.T0 < 720) || Now - _sloshT0 < SloshMs
+        || _cardSlosh.Values.Any(s => Now - s.T0 < SloshMs);
 
     // ───────── drawing ─────────
 
@@ -196,18 +197,20 @@ internal sealed class GlanceView : GlassView
         {
             y += Dp(28);
             Section(canvas, "Все устройства", y);
+            _budsR.Clear();
             foreach (var a in list)
             {
                 float h = a.HasParts ? BudsH : CardH;
                 var r = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(h));
                 var acc = a;
+                if (a.HasParts) _budsR.Add((r, a.Key));
                 Shift(canvas, idx++, () => DrawCard(canvas, r, acc));
                 y += Dp(h + Gap);
             }
         }
 
 
-        if (Animating || list.Any(a => a.Charging) || (hero?.Charging ?? false)) PostInvalidateOnAnimation();
+        if (Animating || list.Any(a => a.Charging || a.HasParts && (a.Left.Charging || a.Right.Charging || a.Case.Charging)) || (hero?.Charging ?? false)) PostInvalidateOnAnimation();
         if (!_drawnOnce) { _drawnOnce = true; Android.Util.Log.Info("Glance", $"drawn: {list.Count} devices, demo={_dev.Demo}"); }
     }
 
@@ -418,7 +421,14 @@ internal sealed class GlanceView : GlassView
         if (part.Level is int l)
         {
             float shown = Tween("P:" + key, l);
-            p.Color = stale ? Palette.Alpha(Palette.Level(l, false), 120) : Palette.Level(l, part.Charging);
+            var col = stale ? Palette.Alpha(Palette.Level(l, false), 120) : Palette.Level(l, part.Charging);
+            // live liquid inside the ring, like the hero: rocks when the card is tapped, bubbles while charging
+            float inset = Dp(4.5f);
+            string card = key[..key.LastIndexOf(':')];
+            var (st0, spow) = _cardSlosh.TryGetValue(card, out var cs) ? cs : (_sloshT0, _sloshPower);
+            DrawLiquid(c, new RectF(box.Left + inset, box.Top + inset, box.Right - inset, box.Bottom - inset),
+                shown, stale ? Palette.Alpha(col, 150) : col, part.Charging && !stale, st0, stale ? spow * 0.5f : spow);
+            p.Color = col;
             c.DrawArc(box, -90, 360 * shown / 100f, false, p);
             TextCentered(c, $"{(int)MathF.Round(shown)}", cx, cy + Dp(5), Dp(14), _p.Text, true);
             if (part.Charging) Icons.Bolt(c, new RectF(cx + rad - Dp(4), cy - rad - Dp(6), cx + rad + Dp(10), cy - rad + Dp(8)), Palette.Green);
@@ -489,14 +499,17 @@ internal sealed class GlanceView : GlassView
         Text(c, sub, tx, r.Top + Dp(98), Dp(12.5f), _p.Sub, maxW: tw);
     }
 
-    void DrawLiquid(Canvas c, RectF disc, float level, AColor color, bool charging)
+    void DrawLiquid(Canvas c, RectF disc, float level, AColor color, bool charging, long? sloshT0 = null, float sloshPower = -1)
     {
         if (level <= 0.5f || disc.Width() < Dp(8)) return;
         long now = Now;
-        float dt = now - _sloshT0;
-        float push = dt >= 0 && dt < SloshMs ? _sloshPower * MathF.Exp(-dt / 700f) : 0;
-        float tilt = push * MathF.Sin(Math.Max(0, dt) / 160f) * Dp(9);
-        float amp = (charging ? Dp(2.2f) : Dp(1.4f)) + push * Dp(3.4f);
+        long t0 = sloshT0 ?? _sloshT0;
+        float power = sloshPower >= 0 ? sloshPower : _sloshPower;
+        float size = Math.Clamp(disc.Width() / Dp(66), 0.3f, 1f); // small rings rock gentler than the hero
+        float dt = now - t0;
+        float push = dt >= 0 && dt < SloshMs ? power * MathF.Exp(-dt / 700f) : 0;
+        float tilt = push * MathF.Sin(Math.Max(0, dt) / 160f) * Dp(9) * size;
+        float amp = ((charging ? Dp(2.2f) : Dp(1.4f)) + push * Dp(3.4f)) * MathF.Sqrt(size);
         float phase = now / (charging ? 300f : 480f);
         float surface = disc.Bottom - disc.Height() * Math.Clamp(level, 0, 100) / 100f;
 
@@ -571,6 +584,24 @@ internal sealed class GlanceView : GlassView
 
     float _downX, _downY;
 
+    /// <summary>Per earbuds card: when its little rings were last pushed (tap) and how hard.</summary>
+    readonly Dictionary<string, (long T0, float Power)> _cardSlosh = new();
+    readonly List<(RectF R, string Key)> _budsR = new();
+
+    void SloshCard(string key, float power)
+    {
+        long now = Now;
+        float left = _cardSlosh.TryGetValue(key, out var cs) && now - cs.T0 < SloshMs ? cs.Power * MathF.Exp(-(now - cs.T0) / 700f) : 0;
+        _cardSlosh[key] = (now, Math.Min(1.4f, left + power));
+        PostInvalidateOnAnimation();
+    }
+
+    string? BudsAt(float x, float y)
+    {
+        foreach (var (r, k) in _budsR) if (r.Contains(x, y)) return k;
+        return null;
+    }
+
     public override bool OnTouchEvent(MotionEvent? e)
     {
         if (e is null) return false;
@@ -580,6 +611,7 @@ internal sealed class GlanceView : GlassView
                 _downX = e.GetX();
                 _downY = e.GetY();
                 if (_heroR.Contains(_downX, _downY)) Slosh(0.6f);
+                else if (BudsAt(_downX, _downY) is { } bk) SloshCard(bk, 0.7f);
                 return true;
             case MotionEventActions.Up:
                 float x = e.GetX(), y = e.GetY();
@@ -588,6 +620,11 @@ internal sealed class GlanceView : GlassView
                 else if (_updR.Contains(x, y)) UpdateRequested?.Invoke();
                 else if (_popR.Contains(x, y)) PopupPermissionRequested?.Invoke();
                 else if (_heroR.Contains(x, y)) Slosh(0.9f);
+                else if (BudsAt(x, y) is { } tapped)
+                {
+                    SloshCard(tapped, 0.8f);
+                    PerformHapticFeedback(FeedbackConstants.ContextClick);
+                }
                 else if (Grow(_gearR, Dp(8)).Contains(x, y))
                 {
                     _gearT0 = Now;
