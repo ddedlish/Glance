@@ -333,8 +333,18 @@ public sealed class GlanceService : Service
         var n = Compose(out string key);
         if (key == _last) return;
         _last = key;
-        try { (GetSystemService(NotificationService) as NotificationManager)?.Notify(NotifyId, n); }
-        catch (Exception e) { Log.Error("Android shade notify", e); }
+        var nm = GetSystemService(NotificationService) as NotificationManager;
+        try { nm?.Notify(NotifyId, n); }
+        catch (Exception e)
+        {
+            // the drawn card did not get through (too large for this device?): plain text from now on
+            Log.Error("Android shade notify", e);
+            if (!_plain)
+            {
+                _plain = true;
+                try { nm?.Notify(NotifyId, Compose(out _)); } catch (Exception e2) { Log.Error("Android shade notify plain", e2); }
+            }
+        }
         Android.Util.Log.Info("Glance", "shade: " + key.Replace('\n', ' '));
     }
 
@@ -389,11 +399,14 @@ public sealed class GlanceService : Service
         hide.SetAction(ActionHide);
         var hidePi = PendingIntent.GetService(this, 1, hide, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
 
+        bool dark = ((Resources?.Configuration?.UiMode ?? Android.Content.Res.UiMode.NightNo) & Android.Content.Res.UiMode.NightMask) == Android.Content.Res.UiMode.NightYes;
+        key += dark ? "\nD" : "\nL";
+        var (small, big) = _plain ? default : Art(all, weakest, text, dark);
+
         var b = new Notification.Builder(this, Channel)
             .SetSmallIcon(StatusIcon(iconLevel, iconCharging))!
             .SetContentTitle(title)!
             .SetContentText(text)!
-            .SetStyle(inbox)!
             .SetOngoing(true)!
             .SetOnlyAlertOnce(true)!
             .SetShowWhen(false)!
@@ -402,7 +415,57 @@ public sealed class GlanceService : Service
             .SetColor(LevelColor(iconLevel, iconCharging).ToArgb())!
             .SetContentIntent(openPi)!
             .AddAction(new Notification.Action.Builder((Icon?)null, new Java.Lang.String("Убрать из шторки"), hidePi).Build())!;
+        if (small is not null && big is not null)
+            b.SetStyle(new Notification.DecoratedCustomViewStyle())!.SetCustomContentView(small)!.SetCustomBigContentView(big);
+        else b.SetStyle(inbox);
         return b.Build()!;
+    }
+
+    bool _plain;
+
+    /// <summary>
+    /// The Liquid Glass card for the shade (ShadeArt): glass chips with liquid rings when collapsed, a glass row per
+    /// accessory when expanded. Null when the layout is missing or drawing fails — then the plain list is shown.
+    /// </summary>
+    (Android.Widget.RemoteViews?, Android.Widget.RemoteViews?) Art(IReadOnlyList<Accessory> all, Accessory? weakest, string text, bool dark)
+    {
+        try
+        {
+            var res = Resources;
+            int layout = res?.GetIdentifier("glance_shade", "layout", PackageName) ?? 0;
+            int img = res?.GetIdentifier("shade_art", "id", PackageName) ?? 0;
+            if (res is null || layout == 0 || img == 0) return (null, null);
+            float density = res.DisplayMetrics?.Density ?? 2f;
+            // the room the shade gives a custom view: Android 12+ indents it past the app icon (and the expand button
+            // when collapsed); before that only the card padding. Drawn to this width, the picture is not scaled down.
+            float sw = res.Configuration?.ScreenWidthDp ?? 360;
+            bool s31 = OperatingSystem.IsAndroidVersionAtLeast(31);
+            float w = Math.Clamp(s31 ? sw * 0.69f : sw - 64, 220, 440);
+            float wSmall = Math.Clamp(s31 ? w - 36 : w, 200, 440);
+            string head = all.Count == 0 ? "Glance следит за зарядом" : $"Аксессуары: {all.Count} · {text}";
+            string a11y = all.Count == 0 ? text : string.Join("; ", all.Select(Line));
+
+            var small = new Android.Widget.RemoteViews(PackageName, layout);
+            small.SetImageViewBitmap(img, ShadeArt.Collapsed(all, dark, wSmall, density));
+            small.SetContentDescription(img, a11y);
+            var big = new Android.Widget.RemoteViews(PackageName, layout);
+            big.SetImageViewBitmap(img, ShadeArt.Expanded(all, head, dark, w, density));
+            big.SetContentDescription(img, a11y);
+            return (small, big);
+        }
+        catch (Exception e)
+        {
+            Log.Error("Android shade art", e);
+            return (null, null);
+        }
+    }
+
+    /// <summary>Light ↔ dark theme switched: redraw the card in the new colours.</summary>
+    public override void OnConfigurationChanged(Android.Content.Res.Configuration newConfig)
+    {
+        base.OnConfigurationChanged(newConfig);
+        _last = "";
+        Schedule();
     }
 
     static string Short(Accessory a)

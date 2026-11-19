@@ -53,6 +53,9 @@ step() { # name, theme(yes/no), extra am args...
 
 shade() { # name — pulls down the notification shade with the always-on «Заряд в шторке» notification
   local name="$1"
+  # wait until the notification is really posted (the service coalesces updates for 400 ms)
+  for k in $(seq 1 20); do adb shell dumpsys notification 2>/dev/null | grep -qE "pkg=$PKG .*id=1 " && break; sleep 0.5; done
+  adb shell dumpsys notification 2>/dev/null | grep -qE "pkg=$PKG .*id=1 " || note "$name: уведомления Glance нет в списке системы"
   sleep 1
   adb shell cmd statusbar expand-notifications >/dev/null 2>&1
   sleep 2
