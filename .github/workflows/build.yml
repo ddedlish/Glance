@@ -245,7 +245,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: repo
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: Glance-*
@@ -302,7 +302,7 @@ jobs:
           make_latest: true
           files: artifacts/*
       # Android: a separate release «android-vX.Y.Z». Never «latest», so the PC updater (releases/latest) ignores it.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: android-apk
           path: apk
