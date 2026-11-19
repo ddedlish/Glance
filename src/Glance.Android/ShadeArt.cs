@@ -249,7 +249,7 @@ internal static class ShadeArt
         c.Restore();
         using var b = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Math.Max(1, x.Dp(1)) };
         b.SetStyle(Paint.Style.Stroke);
-        b.SetShader(new LinearGradient(0, r.Top, 0, r.Bottom, P.CardBorder.ToArgb(), Palette.Alpha(P.CardBorder, P.Dark ? 20 : 120).ToArgb(), Shader.TileMode.Clamp!));
+        b.SetShader(new LinearGradient(0, r.Top, 0, r.Bottom, P.CardBorder, Palette.Alpha(P.CardBorder, P.Dark ? 20 : 120), Shader.TileMode.Clamp!));
         var br = new RectF(r.Left + b.StrokeWidth / 2, r.Top + b.StrokeWidth / 2, r.Right - b.StrokeWidth / 2, r.Bottom - b.StrokeWidth / 2);
         c.DrawRoundRect(br, rad, rad, b);
     }
