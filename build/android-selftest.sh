@@ -51,9 +51,33 @@ step() { # name, theme(yes/no), extra am args...
   if [ -z "$(adb shell pidof $PKG | tr -d '\r')" ]; then fail "$name: приложение закрылось"; fi
 }
 
+shade() { # name — pulls down the notification shade with the always-on «Заряд в шторке» notification
+  local name="$1"
+  sleep 1
+  adb shell cmd statusbar expand-notifications >/dev/null 2>&1
+  sleep 2
+  N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$name")"
+  adb shell cmd statusbar collapse >/dev/null 2>&1
+  if adb logcat -d -s Glance:I | grep -q "shade:"; then note "$name: уведомление в шторке есть"
+  else fail "$name: уведомление в шторке не появилось"; adb logcat -d | grep -iE "glance|ForegroundService" | tail -20 >> "$REPORT"; fi
+}
+
+bottom() { # name — scrolls the screen to the end (phone card, «Заряд в шторке» switch)
+  local name="$1"
+  local size; size=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1)
+  local W=${size%x*} H=${size#*x}
+  adb shell input swipe $((W/2)) $((H*4/5)) $((W/2)) $((H/6)) 300 >/dev/null 2>&1
+  sleep 1.5
+  N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$name")"
+  note "$name: прокрутка до конца"
+}
+
 step dark-demo yes --ez demo true
+shade dark-shade
+bottom dark-demo-bottom
 step dark-demo-update yes --ez demo true --es fakeupdate 9.9.9
 step light-demo no --ez demo true
+shade light-shade
 step dark-real yes
 step light-real no
 adb logcat -d > "$OUT/logcat.txt" 2>/dev/null

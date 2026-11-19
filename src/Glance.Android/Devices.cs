@@ -22,6 +22,9 @@ internal sealed class Devices
 
     public event Action? Changed;
     public bool Demo { get; private set; }
+
+    /// <summary>Runs for the shade notification while the app is closed: economical BLE scanning.</summary>
+    public bool Background { get; init; }
     public bool BluetoothOff { get; private set; }
     public bool NoBluetooth { get; private set; }
 
@@ -192,7 +195,7 @@ internal sealed class Devices
             _scanner = adapter.BluetoothLeScanner;
             if (_scanner is null) return;
             _scan = new BudsScan(r => _main.Post(() => OnAdvert(r)));
-            var settings = new ScanSettings.Builder().SetScanMode(Android.Bluetooth.LE.ScanMode.LowLatency)!.Build();
+            var settings = new ScanSettings.Builder().SetScanMode(Background ? Android.Bluetooth.LE.ScanMode.LowPower : Android.Bluetooth.LE.ScanMode.LowLatency)!.Build();
             _scanner.StartScan(null, settings, _scan);
         }
         catch (Exception e) { Log.Error("Android BLE scan", e); _scan = null; }

@@ -51,8 +51,12 @@ internal sealed class GlanceView : View
     public UpdateInfo? Update { get; set; }
     public event Action? PermissionRequested, UpdateRequested;
 
+    /// <summary>«Заряд в шторке» switch at the bottom (the always-on notification).</summary>
+    public bool ShadeOn { get; set; } = true;
+    public event Action<bool>? ShadeToggled;
+
     // hit areas
-    RectF _heroR = new(), _permR = new(), _updR = new();
+    RectF _heroR = new(), _permR = new(), _updR = new(), _shadeR = new();
 
     public GlanceView(Context c, Devices dev) : base(c)
     {
@@ -67,7 +71,7 @@ internal sealed class GlanceView : View
 
     // ───────── layout ─────────
 
-    const float Side = 16, Gap = 12, HeroH = 148, CardH = 84, BudsH = 150, BannerH = 64;
+    const float Side = 16, Gap = 12, HeroH = 148, CardH = 84, BudsH = 150, BannerH = 64, ShadeH = 72;
 
     Accessory? Hero(IReadOnlyList<Accessory> list)
     {
@@ -85,6 +89,7 @@ internal sealed class GlanceView : View
         if (list.Count == 0) y += 200;
         else y += 28 + list.Sum(a => (a.HasParts ? BudsH : CardH) + Gap);
         if (_dev.PhoneLevel is not null) y += 28 + CardH + Gap;
+        y += 28 + ShadeH + Gap;
         y += 40;
         return Dp(y) + BottomInset;
     }
@@ -214,13 +219,60 @@ internal sealed class GlanceView : View
                 SystemCharging = _dev.PhoneCharging,
             };
             Shift(canvas, idx++, () => DrawCard(canvas, r, phone, phoneCard: true));
+            y += Dp(CardH + Gap);
         }
+
+        y += Dp(28);
+        Section(canvas, "Шторка", y);
+        _shadeR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(ShadeH));
+        var sr = _shadeR;
+        Shift(canvas, idx++, () => DrawShadeRow(canvas, sr));
 
         if (Animating || list.Any(a => a.Charging) || (hero?.Charging ?? false)) PostInvalidateOnAnimation();
         if (!_drawnOnce) { _drawnOnce = true; Android.Util.Log.Info("Glance", $"drawn: {list.Count} devices, demo={_dev.Demo}"); }
     }
 
     bool _drawnOnce;
+
+    long _switchT0 = -10_000;
+
+    /// <summary>Glass row with an iOS-style switch: the knob glides and the track fills with colour.</summary>
+    void DrawShadeRow(Canvas c, RectF r)
+    {
+        Glass(c, r, Dp(22));
+        var tile = new RectF(r.Left + Dp(16), r.Top + Dp(16), r.Left + Dp(56), r.Top + Dp(56));
+        using (var tp = new Paint(PaintFlags.AntiAlias))
+        {
+            tp.SetShader(new LinearGradient(tile.Left, tile.Top, tile.Right, tile.Bottom, Palette.Mix(_p.Accent, AColor.White, 0.2f), Palette.Mix(_p.Accent, AColor.Black, 0.1f), Shader.TileMode.Clamp!));
+            c.DrawRoundRect(tile, Dp(12), Dp(12), tp);
+        }
+        // the status-bar ring, in miniature
+        using (var rp = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Dp(2.6f), StrokeCap = Paint.Cap.Round, Color = AColor.Argb(110, 255, 255, 255) })
+        {
+            rp.SetStyle(Paint.Style.Stroke);
+            var rb = new RectF(tile.Left + Dp(10), tile.Top + Dp(10), tile.Right - Dp(10), tile.Bottom - Dp(10));
+            c.DrawOval(rb, rp);
+            rp.Color = AColor.White;
+            c.DrawArc(rb, -90, 250, false, rp);
+        }
+        float tx = tile.Right + Dp(14), sw = Dp(52), sh = Dp(32);
+        Text(c, "Заряд в шторке", tx, r.Top + Dp(32), Dp(16), _p.Text, bold: true, maxW: r.Right - tx - sw - Dp(30));
+        Text(c, ShadeOn ? "Виден всегда, даже когда Glance закрыт" : "Выключено", tx, r.Top + Dp(52), Dp(12.5f), _p.Sub, maxW: r.Right - tx - sw - Dp(30));
+
+        float k = Math.Clamp((Now - _switchT0) / 260f, 0, 1);
+        k = 1 - MathF.Pow(1 - k, 3);
+        float on = ShadeOn ? k : 1 - k;
+        var track = new RectF(r.Right - Dp(18) - sw, r.CenterY() - sh / 2, r.Right - Dp(18), r.CenterY() + sh / 2);
+        using (var t = new Paint(PaintFlags.AntiAlias) { Color = Palette.Mix(_p.Track, Palette.Green, on) })
+            c.DrawRoundRect(track, sh / 2, sh / 2, t);
+        float kr = sh / 2 - Dp(3);
+        float kx = track.Left + Dp(3) + kr + (track.Width() - 2 * (kr + Dp(3))) * on;
+        using (var shadow = new Paint(PaintFlags.AntiAlias) { Color = AColor.Argb(50, 0, 0, 0) })
+            c.DrawCircle(kx, track.CenterY() + Dp(1), kr, shadow);
+        using (var knob = new Paint(PaintFlags.AntiAlias) { Color = AColor.White })
+            c.DrawCircle(kx, track.CenterY(), kr, knob);
+        if (k < 1) PostInvalidateOnAnimation();
+    }
 
     /// <summary>Draws an item with its entrance offset and fade.</summary>
     void Shift(Canvas c, int i, Action draw)
@@ -582,6 +634,13 @@ internal sealed class GlanceView : View
                 if (_permR.Contains(x, y)) PermissionRequested?.Invoke();
                 else if (_updR.Contains(x, y)) UpdateRequested?.Invoke();
                 else if (_heroR.Contains(x, y)) Slosh(0.9f);
+                else if (_shadeR.Contains(x, y))
+                {
+                    ShadeOn = !ShadeOn;
+                    _switchT0 = Now;
+                    ShadeToggled?.Invoke(ShadeOn);
+                    Invalidate();
+                }
                 PerformClick();
                 return true;
         }

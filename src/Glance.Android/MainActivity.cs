@@ -41,6 +41,14 @@ public sealed class MainActivity : Activity
         _view.BottomInset = SystemBar("navigation_bar_height");
         _view.PermissionRequested += AskPermissions;
         _view.UpdateRequested += OpenUpdate;
+        _view.ShadeOn = GlanceService.Enabled(this);
+        _view.ShadeToggled += on =>
+        {
+            GlanceService.SetEnabled(this, on);
+            if (on && _dev?.Demo == true) GlanceService.Start(this, true);
+            if (on && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted)
+                AskPermissions();
+        };
         _dev.Changed += () => { _view?.RequestLayout(); _view?.Invalidate(); };
 
         if (Intent?.GetBooleanExtra("demo", false) == true) _dev.UseDemo();
@@ -48,7 +56,8 @@ public sealed class MainActivity : Activity
             _view.Update = new UpdateInfo(fv, "https://github.com/ddedlish/Glance-Releases/releases", "");
         ApplyTheme();
 
-        if (!_dev.Demo && _dev.MissingPermission) AskPermissions();
+        if (!_dev.Demo && (_dev.MissingPermission || (GlanceService.Enabled(this) && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu
+            && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted))) AskPermissions();
     }
 
     protected override void OnResume()
@@ -56,6 +65,8 @@ public sealed class MainActivity : Activity
         base.OnResume();
         _dev?.Start();
         _view?.Replay();
+        if (_dev is not null) GlanceService.Start(this, _dev.Demo);
+        if (_view is not null) { _view.ShadeOn = GlanceService.Enabled(this); _view.Invalidate(); }
         _ = CheckUpdatesAsync();
     }
 
@@ -101,7 +112,9 @@ public sealed class MainActivity : Activity
 
     void AskPermissions()
     {
-        try { RequestPermissions(Devices.NeededPermissions, PermRequest); }
+        var perms = Devices.NeededPermissions.ToList();
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu) perms.Add("android.permission.POST_NOTIFICATIONS"); // the shade notification
+        try { RequestPermissions(perms.ToArray(), PermRequest); }
         catch (Exception e) { Log.Error("Android permissions", e); }
     }
 
@@ -111,6 +124,7 @@ public sealed class MainActivity : Activity
         if (requestCode != PermRequest) return;
         _dev?.Stop();
         _dev?.Start();
+        if (_dev is not null) GlanceService.Start(this, _dev.Demo);
     }
 
     async Task CheckUpdatesAsync()
