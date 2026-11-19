@@ -23,7 +23,7 @@ internal sealed class Devices
     public event Action? Changed;
     public bool Demo { get; private set; }
 
-    /// <summary>Runs for the shade notification while the app is closed: economical BLE scanning.</summary>
+    /// <summary>Runs for the shade notification while the app is closed: balanced BLE scanning (updates within seconds, little battery).</summary>
     public bool Background { get; init; }
     public bool BluetoothOff { get; private set; }
     public bool NoBluetooth { get; private set; }
@@ -85,7 +85,7 @@ internal sealed class Devices
 
     void OnBroadcast(Intent i)
     {
-        if (i.Action == Intent.ActionBatteryChanged) { ReadPhone(i); Changed?.Invoke(); return; }
+        if (i.Action == Intent.ActionBatteryChanged) { if (!Demo) { ReadPhone(i); Changed?.Invoke(); } return; }
         // The battery report and connection changes arrive a moment before the hidden getters update.
         Refresh();
         _main.PostDelayed(Refresh, 1500);
@@ -183,6 +183,8 @@ internal sealed class Devices
 
     // ───────── per-bud levels from BLE adverts (AirPods, Fast Pair) ─────────
 
+    readonly Dictionary<string, DateTime> _caseAt = new(StringComparer.Ordinal);
+
     static readonly ParcelUuid FastPairUuid = ParcelUuid.FromString("0000fe2c-0000-1000-8000-00805f9b34fb")!;
 
     void StartScan()
@@ -195,8 +197,15 @@ internal sealed class Devices
             _scanner = adapter.BluetoothLeScanner;
             if (_scanner is null) return;
             _scan = new BudsScan(r => _main.Post(() => OnAdvert(r)));
-            var settings = new ScanSettings.Builder().SetScanMode(Background ? Android.Bluetooth.LE.ScanMode.LowPower : Android.Bluetooth.LE.ScanMode.LowLatency)!.Build();
-            _scanner.StartScan(null, settings, _scan);
+            var settings = new ScanSettings.Builder().SetScanMode(Background ? Android.Bluetooth.LE.ScanMode.Balanced : Android.Bluetooth.LE.ScanMode.LowLatency)!.Build();
+            // Filtered scan: Android keeps it running with the screen off (unfiltered scans are paused then),
+            // and only earbud adverts wake the app.
+            var filters = new List<ScanFilter>
+            {
+                new ScanFilter.Builder().SetManufacturerData(0x004C, Array.Empty<byte>())!.Build()!,
+                new ScanFilter.Builder().SetServiceData(FastPairUuid, Array.Empty<byte>())!.Build()!,
+            };
+            _scanner.StartScan(filters, settings, _scan);
         }
         catch (Exception e) { Log.Error("Android BLE scan", e); _scan = null; }
     }
@@ -210,21 +219,34 @@ internal sealed class Devices
 
     void OnAdvert((byte[]? Apple, byte[]? FastPair, int Rssi) r)
     {
-        if (r.Rssi < -68) return; // someone else's earbuds nearby
+        // Earbuds in the ears with the phone in a pocket are often -75…-85 dBm; neighbours' buds are filtered
+        // by model (Apple) and by «only connected devices of the same protocol» below.
+        if (r.Rssi < -88) return;
         BudsAdvert ad;
         if (r.Apple is { } ap && AppleContinuity.TryParse(ap, out var a1)) ad = a1;
         else if (r.FastPair is { } fp && FastPair.TryParse(fp, out var a2)) ad = a2;
         else return;
+        // Fast Pair adverts carry no model: be stricter about distance for them.
+        if (ad.Vendor == BudsSource.FastPair && r.Rssi < -78) return;
 
         var target = _all.Values.Where(a => a.Connected && a.Profile.Buds == ad.Vendor)
             .OrderByDescending(a => ad.Vendor == BudsSource.AppleContinuity ? AppleModels.Affinity(a.DisplayName, ad.Model) : 0)
             .FirstOrDefault();
         if (target is null) return;
         if (ad.Vendor == BudsSource.AppleContinuity && AppleModels.Affinity(target.DisplayName, ad.Model) < 0) return;
-        bool changed = target.Left != ad.Left || target.Right != ad.Right || target.Case != ad.Case;
+        // Someone else's earbuds: their levels disagree with what Android reports for ours.
+        if (target.SystemLevel is int sys && (ad.Left.Level ?? ad.Right.Level) is int bud
+            && Math.Abs(Math.Min(ad.Left.Level ?? bud, ad.Right.Level ?? bud) - sys) > 25) return;
+        // The case reports its charge only while it is open or a bud sits in it; the rest of the time adverts say
+        // «unknown». Keep the last known case level (like iOS does) instead of blanking it.
+        var caseNow = ad.Case.Known ? ad.Case
+            : target.Case.Known && DateTime.UtcNow - _caseAt.GetValueOrDefault(target.Key) < TimeSpan.FromHours(12) ? target.Case with { Charging = false }
+            : Part.Unknown;
+        if (ad.Case.Known) _caseAt[target.Key] = DateTime.UtcNow;
+        bool changed = target.Left != ad.Left || target.Right != ad.Right || target.Case != caseNow;
         target.Left = ad.Left;
         target.Right = ad.Right;
-        target.Case = ad.Case;
+        target.Case = caseNow;
         target.PartsAtUtc = DateTime.UtcNow;
         target.PartsSource = ad.Vendor == BudsSource.AppleContinuity ? "Apple" : "Fast Pair";
         target.BudsModel = ad.Model;
