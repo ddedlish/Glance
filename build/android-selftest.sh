@@ -117,6 +117,26 @@ popup() { # name — the glass card that slides up over any app the moment earbu
   if adb logcat -d | grep -E "FATAL EXCEPTION" >/dev/null; then fail "$name: падение"; adb logcat -d | grep -A30 "FATAL EXCEPTION" | head -60 >> "$REPORT"; fi
 }
 
+notices() { # name — «пора зарядить» and «заряжено полностью» notifications (demo: Galaxy Watch6 18 %, Keychron charging)
+  local name="$1"
+  adb shell cmd uimode night yes >/dev/null 2>&1
+  adb shell am force-stop $PKG
+  adb logcat -c
+  adb shell am start -W -n "$ACT" --ez demo true --ez notice true >/dev/null 2>&1
+  for k in $(seq 1 30); do adb logcat -d -s Glance:I | grep -q "notice: low" && break; sleep 0.3; done
+  adb shell input keyevent KEYCODE_HOME
+  sleep 1
+  adb shell cmd statusbar expand-notifications >/dev/null 2>&1
+  sleep 2
+  N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$name")"
+  adb shell cmd statusbar collapse >/dev/null 2>&1
+  adb logcat -d -s Glance:I | grep -E "notice" | sed 's/^/  /' | tail -6 >> "$REPORT"
+  if adb logcat -d -s Glance:I | grep -q "notice: low" && adb logcat -d -s Glance:I | grep -q "notice: full"; then note "$name: уведомления о низком заряде и полной зарядке показаны"
+  else fail "$name: уведомления о заряде не появились"; adb logcat -d -s Glance:E | grep -i notice | head -5 >> "$REPORT"; fi
+  if adb logcat -d | grep -E "FATAL EXCEPTION" >/dev/null; then fail "$name: падение"; adb logcat -d | grep -A30 "FATAL EXCEPTION" | head -60 >> "$REPORT"; fi
+}
+
+notices dark-notices
 popup dark-popup
 step dark-real yes
 step light-real no

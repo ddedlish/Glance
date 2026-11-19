@@ -11,7 +11,7 @@ namespace Glance.Droid;
 /// <summary>User settings kept in SharedPreferences «glance» (next to «shade» and «sounds»).</summary>
 internal static class UserPrefs
 {
-    const string Name = "glance", PrefLowAt = "lowAt", PrefTheme = "theme";
+    const string Name = "glance", PrefLowAt = "lowAt", PrefTheme = "theme", PrefNotify = "batteryNotify";
     public static readonly int[] LowSteps = { 10, 15, 20, 25, 30 };
 
     static ISharedPreferences? P(Context c) => c.GetSharedPreferences(Name, FileCreationMode.Private);
@@ -19,6 +19,10 @@ internal static class UserPrefs
     /// <summary>«Низкий заряд»: the level at which Glance says «Пора зарядить» and plays the low chime (default 20 %).</summary>
     public static int LowAt(Context c) => Math.Clamp(P(c)?.GetInt(PrefLowAt, 20) ?? 20, 5, 50);
     public static void SetLowAt(Context c, int v) => P(c)?.Edit()?.PutInt(PrefLowAt, v)?.Apply();
+
+    /// <summary>«Уведомления о заряде»: «пора зарядить» and «заряжено полностью» in the shade, once per cycle (default on).</summary>
+    public static bool Notify(Context c) => P(c)?.GetBoolean(PrefNotify, true) ?? true;
+    public static void SetNotify(Context c, bool on) => P(c)?.Edit()?.PutBoolean(PrefNotify, on)?.Apply();
 
     /// <summary>0 — as the system, 1 — dark, 2 — light.</summary>
     public static int Theme(Context c) => Math.Clamp(P(c)?.GetInt(PrefTheme, 0) ?? 0, 0, 2);
@@ -210,19 +214,20 @@ internal sealed class SettingsView : GlassView
 {
     public bool ShadeOn { get; set; } = true;
     public bool SoundsOn { get; set; } = true;
+    public bool NotifyOn { get; set; } = true;
     public bool PopupAllowed { get; set; } = true;
     public int LowAt { get; set; } = 20;
     public int Theme { get; set; }
     public string VersionText { get; set; } = "";
 
     public event Action? BackRequested, PopupRequested, SourceRequested;
-    public event Action<bool>? ShadeToggled, SoundsToggled;
+    public event Action<bool>? ShadeToggled, SoundsToggled, NotifyToggled;
     public event Action<int>? LowAtChanged, ThemeChanged;
 
     static readonly string[] ThemeNames = { "Системная", "Тёмная", "Светлая" };
 
-    RectF _backR = new(), _shadeR = new(), _soundR = new(), _popR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new();
-    long _shadeT0 = -10_000, _soundT0 = -10_000, _lowT0 = -10_000, _themeT0 = -10_000;
+    RectF _backR = new(), _shadeR = new(), _soundR = new(), _notifyR = new(), _popR = new(), _lowSeg = new(), _themeSeg = new(), _srcR = new();
+    long _shadeT0 = -10_000, _soundT0 = -10_000, _notifyT0 = -10_000, _lowT0 = -10_000, _themeT0 = -10_000;
     float _lowFrom, _themeFrom;
     bool _drawnOnce;
 
@@ -235,7 +240,7 @@ internal sealed class SettingsView : GlassView
 
     const float Gap = 12, RowH = 72, SegCardH = 116, AboutH = 156, Head = 28;
 
-    float ContentHeight() => Dp(TopInset / _d + 20 + 96 + 5 * Head + 3 * (RowH + Gap) + 2 * (SegCardH + Gap) + AboutH + Gap + 40) + BottomInset;
+    float ContentHeight() => Dp(TopInset / _d + 20 + 96 + 6 * Head + 4 * (RowH + Gap) + 2 * (SegCardH + Gap) + AboutH + Gap + 40) + BottomInset;
 
     protected override void OnMeasure(int widthMeasureSpec, int heightMeasureSpec)
     {
@@ -277,6 +282,14 @@ internal sealed class SettingsView : GlassView
         _soundR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(RowH));
         var snr = _soundR;
         Shift(canvas, idx++, () => DrawSoundRow(canvas, snr));
+        y += Dp(RowH + Gap);
+
+        // ── battery notifications
+        y += Dp(Head);
+        Section(canvas, "Уведомления", y);
+        _notifyR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(RowH));
+        var nr = _notifyR;
+        Shift(canvas, idx++, () => DrawNotifyRow(canvas, nr));
         y += Dp(RowH + Gap);
 
         // ── connect popup
@@ -439,6 +452,48 @@ internal sealed class SettingsView : GlassView
         if (Now - _soundT0 < 1300) PostInvalidateOnAnimation();
     }
 
+    /// <summary>«О заряде»: a bell that swings and rings for a moment after the switch is flipped on.</summary>
+    void DrawNotifyRow(Canvas c, RectF r)
+    {
+        Glass(c, r, Dp(22));
+        var tile = new RectF(r.Left + Dp(16), r.Top + Dp(16), r.Left + Dp(56), r.Top + Dp(56));
+        float since = (Now - _notifyT0) / 1000f;
+        ColorTile(c, tile, AColor.Argb(255, 255, 159, 10), (cx, cy) =>
+        {
+            // damped swing around the bell's hook
+            float swing = NotifyOn && since < 1.1f ? 22f * MathF.Exp(-since * 3.2f) * MathF.Sin(since * 26f) : 0;
+            c.Save();
+            c.Rotate(swing, cx, cy - Dp(10));
+            using var p = new Paint(PaintFlags.AntiAlias) { Color = NotifyOn ? AColor.White : AColor.Argb(150, 255, 255, 255) };
+            using (var bell = new Path())
+            {
+                bell.MoveTo(cx - Dp(9), cy + Dp(5));
+                bell.CubicTo(cx - Dp(7), cy + Dp(2), cx - Dp(8), cy - Dp(9), cx, cy - Dp(9));
+                bell.CubicTo(cx + Dp(8), cy - Dp(9), cx + Dp(7), cy + Dp(2), cx + Dp(9), cy + Dp(5));
+                bell.Close();
+                c.DrawPath(bell, p);
+            }
+            c.DrawRoundRect(new RectF(cx - Dp(10), cy + Dp(4), cx + Dp(10), cy + Dp(6.5f)), Dp(1.2f), Dp(1.2f), p);
+            c.DrawCircle(cx, cy - Dp(10), Dp(1.8f), p);
+            c.Restore();
+            // the clapper swings the other way, a little behind
+            float back = -swing * 0.6f;
+            c.Save();
+            c.Rotate(back, cx, cy - Dp(10));
+            c.DrawCircle(cx, cy + Dp(9), Dp(2.4f), p);
+            c.Restore();
+            if (!NotifyOn)
+            {
+                using var x = new Paint(PaintFlags.AntiAlias) { Color = AColor.White, StrokeWidth = Dp(2), StrokeCap = Paint.Cap.Round };
+                c.DrawLine(cx - Dp(11), cy - Dp(11), cx + Dp(11), cy + Dp(11), x);
+            }
+        });
+        // short: the subtitle shares the row with the switch on narrow phones
+        string sub = !NotifyOn ? "Выключено" : ShadeOn ? $"Ниже {LowAt}% и 100%" : "Включите шторку";
+        DrawSwitch(c, r, tile, "О заряде", sub, NotifyOn, _notifyT0);
+        if (Now - _notifyT0 < 1200) PostInvalidateOnAnimation();
+    }
+
     /// <summary>The connect popup: allowed (green check) or a hint to allow «Поверх других приложений».</summary>
     void DrawPopupRow(Canvas c, RectF r)
     {
@@ -543,6 +598,13 @@ internal sealed class SettingsView : GlassView
                     _soundT0 = Now;
                     Tick();
                     SoundsToggled?.Invoke(SoundsOn);
+                }
+                else if (_notifyR.Contains(x, y))
+                {
+                    NotifyOn = !NotifyOn;
+                    _notifyT0 = Now;
+                    Tick();
+                    NotifyToggled?.Invoke(NotifyOn);
                 }
                 else if (_popR.Contains(x, y)) PopupRequested?.Invoke();
                 else if (Grow(_lowSeg, Dp(6)).Contains(x, y))

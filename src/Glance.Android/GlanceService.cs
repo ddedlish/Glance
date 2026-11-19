@@ -37,7 +37,7 @@ public sealed class GlanceService : Service
     }
 
     /// <summary>Starts the shade notification when it is switched on and Android allows it (Bluetooth permission).</summary>
-    public static void Start(Context c, bool demo, bool popup = false)
+    public static void Start(Context c, bool demo, bool popup = false, bool notice = false)
     {
         if (!Enabled(c)) return;
         // Android 14 lets a connectedDevice service start only with the Bluetooth permission granted.
@@ -47,6 +47,7 @@ public sealed class GlanceService : Service
             var i = new Intent(c, typeof(GlanceService));
             i.PutExtra("demo", demo);
             i.PutExtra("popup", popup);
+            i.PutExtra("notice", notice);
             c.StartForegroundService(i);
         }
         catch (Exception e) { Log.Error("Android shade start", e); }
@@ -88,6 +89,16 @@ public sealed class GlanceService : Service
                 var b = _dev?.Connected.FirstOrDefault(a => a.HasParts);
                 Android.Util.Log.Info("Glance", $"announce test: {(b is null ? "no earbuds" : b.DisplayName)}");
                 if (b is not null) { Announce(b, force: true); Sounds.Play(this, Cue.Connect); }
+            }, 900);
+        // self-test: «пора зарядить» for the weakest demo device and «заряжено» for the charging one
+        if (demo && intent?.GetBooleanExtra("notice", false) == true)
+            _main.PostDelayed(() =>
+            {
+                var low = _dev?.Connected.Where(a => !a.Charging && a.WeakestLevel is not null).MinBy(a => a.WeakestLevel);
+                var full = _dev?.Connected.FirstOrDefault(a => a.Charging && a.Level is not null);
+                Android.Util.Log.Info("Glance", $"notice test: {low?.DisplayName ?? "-"} / {full?.DisplayName ?? "-"}");
+                if (full is not null) Notice(full, low: false);
+                if (low is not null) Notice(low, low: true);
             }, 900);
         return StartCommandResult.Sticky;
     }
@@ -161,16 +172,79 @@ public sealed class GlanceService : Service
             bool fresh = _seen.Add(a.Key);
             if (a.WeakestLevel is int w)
             {
-                if (!a.Charging && w <= LowAt) { if (_low.Add(a.Key) && !fresh) cue ??= Cue.Low; }
-                else if (a.Charging || w >= LowAt + 5) _low.Remove(a.Key); // charged again: next drop chimes again
+                if (!a.Charging && w <= LowAt) { if (_low.Add(a.Key) && !fresh) { cue ??= Cue.Low; Notice(a, low: true); } }
+                else if (a.Charging || w >= LowAt + 5)
+                {
+                    if (_low.Remove(a.Key)) Clear(a.Key, lowOnly: true); // on the charger: «пора зарядить» is done
+                }
             }
             if (a.Level is int l)
             {
-                if (a.Charging && l >= 100) { if (_full.Add(a.Key) && !fresh) cue = Cue.Full; }
+                if (a.Charging && l >= 100) { if (_full.Add(a.Key) && !fresh) { cue = Cue.Full; Notice(a, low: false); } }
                 else if (!a.Charging || l <= 95) _full.Remove(a.Key);
             }
         }
         if (chime && cue is Cue c) Sounds.Play(this, c);
+    }
+
+    // ───────── «пора зарядить» / «заряжено полностью»: one notification per device and cycle ─────────
+
+    const string BatteryChannel = "glance-battery";
+    readonly Dictionary<string, bool> _posted = new(StringComparer.Ordinal); // key → was it «low»
+
+    static int NoticeId(string key)
+    {
+        int h = 17;
+        foreach (char ch in key) h = unchecked(h * 31 + ch);
+        return 1000 + (h & 0x7FFF);
+    }
+
+    void Notice(Accessory a, bool low)
+    {
+        if (!UserPrefs.Notify(this)) { Android.Util.Log.Info("Glance", $"notice: {(low ? "low" : "full")} {a.DisplayName} skipped (off)"); return; }
+        try
+        {
+            var nm = GetSystemService(NotificationService) as NotificationManager;
+            if (nm is null) return;
+            if (nm.GetNotificationChannel(BatteryChannel) is null)
+            {
+                // High: it peeks over the screen for a moment; silent itself — Glance plays its own soft chime (and keeps quiet in «Не беспокоить»)
+                var ch = new NotificationChannel(BatteryChannel, "Низкий заряд и полная зарядка", NotificationImportance.High)
+                { Description = "Пора зарядить аксессуар или он уже заряжен — один раз за цикл" };
+                ch.EnableVibration(false);
+                ch.SetSound(null, null);
+                nm.CreateNotificationChannel(ch);
+            }
+            int lvl = (low ? a.WeakestLevel : a.Level) ?? 0;
+            string title = low ? $"{a.DisplayName}: {lvl}% — пора зарядить" : $"{a.DisplayName} заряжен полностью";
+            string text = low
+                ? (a.HasParts ? $"{Parts(a)}% · предупреждение на {LowAt}%" : $"Осталось {lvl}% · предупреждение на {LowAt}% и ниже")
+                : $"{lvl}% — можно снять с зарядки";
+            var open = new Intent(this, typeof(MainActivity));
+            open.AddFlags(ActivityFlags.NewTask | ActivityFlags.SingleTop);
+            var n = new Notification.Builder(this, BatteryChannel)
+                .SetSmallIcon(StatusIcon(lvl, !low))!
+                .SetContentTitle(title)!
+                .SetContentText(text)!
+                .SetColor(LevelColor(lvl, !low).ToArgb())!
+                .SetAutoCancel(true)!
+                .SetCategory(low ? Notification.CategoryReminder : Notification.CategoryStatus)!
+                .SetVisibility(NotificationVisibility.Public)!
+                .SetContentIntent(PendingIntent.GetActivity(this, 3, open, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent))!
+                .Build();
+            nm.Notify(NoticeId(a.Key), n); // the same slot per device: «заряжено» replaces an old «пора зарядить»
+            _posted[a.Key] = low;
+            Android.Util.Log.Info("Glance", $"notice: {(low ? "low" : "full")} {a.DisplayName} {lvl}%");
+        }
+        catch (Exception e) { Log.Error("Android battery notice", e); Android.Util.Log.Error("Glance", "notice failed: " + e.Message); }
+    }
+
+    /// <summary>Removes the device's notice (only a «пора зарядить» one when lowOnly).</summary>
+    void Clear(string key, bool lowOnly)
+    {
+        if (!_posted.TryGetValue(key, out bool wasLow) || (lowOnly && !wasLow)) return;
+        _posted.Remove(key);
+        try { (GetSystemService(NotificationService) as NotificationManager)?.Cancel(NoticeId(key)); } catch { }
     }
 
     void Announce(Accessory a, bool force = false)
@@ -303,15 +377,21 @@ public sealed class GlanceService : Service
     {
         if (a.HasParts)
         {
-            var parts = new List<string>();
             // short enough to fit one line of the shade: «AirPods Pro — Л 72 · П 64 · К 41%»
-            if (a.Left.Level is int l) parts.Add($"Л {l}{(a.Left.Charging ? "⚡" : "")}");
-            if (a.Right.Level is int r) parts.Add($"П {r}{(a.Right.Charging ? "⚡" : "")}");
-            if (a.Case.Level is int c) parts.Add($"К {c}{(a.Case.Charging ? "⚡" : "")}");
-            return $"{a.DisplayName} — {string.Join(" · ", parts)}%";
+            return $"{a.DisplayName} — {Parts(a)}%";
         }
         if (a.Level is int lv) return $"{a.DisplayName} — {lv}%{(a.Charging ? " ⚡" : "")}";
         return $"{a.DisplayName} — {a.Link}, заряд не передаётся";
+    }
+
+    /// <summary>«Л 72 · П 64 · К 41» (without the % sign).</summary>
+    static string Parts(Accessory a)
+    {
+        var parts = new List<string>();
+        if (a.Left.Level is int l) parts.Add($"Л {l}{(a.Left.Charging ? "⚡" : "")}");
+        if (a.Right.Level is int r) parts.Add($"П {r}{(a.Right.Charging ? "⚡" : "")}");
+        if (a.Case.Level is int c) parts.Add($"К {c}{(a.Case.Charging ? "⚡" : "")}");
+        return string.Join(" · ", parts);
     }
 
     static AColor LevelColor(int? level, bool charging) =>

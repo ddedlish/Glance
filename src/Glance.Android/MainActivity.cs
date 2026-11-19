@@ -62,6 +62,7 @@ public sealed class MainActivity : Activity
 
         _settings.ShadeOn = GlanceService.Enabled(this);
         _settings.SoundsOn = Sounds.Enabled(this);
+        _settings.NotifyOn = UserPrefs.Notify(this);
         _settings.PopupAllowed = ConnectPopup.Allowed(this);
         _settings.LowAt = UserPrefs.LowAt(this);
         _settings.Theme = UserPrefs.Theme(this);
@@ -77,6 +78,12 @@ public sealed class MainActivity : Activity
         {
             GlanceService.SetEnabled(this, on);
             if (on && _dev?.Demo == true) GlanceService.Start(this, true);
+            if (on && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted)
+                AskPermissions();
+        };
+        _settings.NotifyToggled += on =>
+        {
+            UserPrefs.SetNotify(this, on);
             if (on && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted)
                 AskPermissions();
         };
@@ -109,7 +116,7 @@ public sealed class MainActivity : Activity
         Visible = true;
         _dev?.Start();
         _view?.Replay();
-        if (_dev is not null) GlanceService.Start(this, _dev.Demo, Intent?.GetBooleanExtra("popup", false) == true);
+        if (_dev is not null) GlanceService.Start(this, _dev.Demo, Intent?.GetBooleanExtra("popup", false) == true, Intent?.GetBooleanExtra("notice", false) == true);
         if (_view is not null) { _view.PopupAllowed = ConnectPopup.Allowed(this); _view.RequestLayout(); _view.Invalidate(); }
         if (_settings is not null)
         {
