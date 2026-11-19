@@ -66,7 +66,7 @@ bottom() { # name — scrolls the screen to the end (phone card, «Заряд в
   local name="$1"
   local size; size=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1)
   local W=${size%x*} H=${size#*x}
-  adb shell input swipe $((W/2)) $((H*4/5)) $((W/2)) $((H/6)) 300 >/dev/null 2>&1
+  for k in 1 2 3; do adb shell input swipe $((W/2)) $((H*4/5)) $((W/2)) $((H/6)) 250 >/dev/null 2>&1; sleep 0.4; done
   sleep 1.5
   N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$name")"
   note "$name: прокрутка до конца"

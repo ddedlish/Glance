@@ -166,7 +166,7 @@ public sealed class GlanceService : Service
 
         var inbox = new Notification.InboxStyle();
         foreach (var a in all) inbox.AddLine(Line(a));
-        if (phone is int p2) inbox.AddLine($"Телефон — {p2}%{(phoneCharging ? " ⚡ заряжается" : "")}");
+        if (phone is int p2) inbox.AddLine($"Телефон — {p2}%{(phoneCharging ? " ⚡" : "")}");
         inbox.SetBigContentTitle(all.Count == 0 ? title : $"Аксессуары: {all.Count}");
 
         int? iconLevel = weakest?.WeakestLevel;
@@ -207,12 +207,13 @@ public sealed class GlanceService : Service
         if (a.HasParts)
         {
             var parts = new List<string>();
-            if (a.Left.Level is int l) parts.Add($"Л {l}%");
-            if (a.Right.Level is int r) parts.Add($"П {r}%");
-            if (a.Case.Level is int c) parts.Add($"кейс {c}%{(a.Case.Charging ? "⚡" : "")}");
-            return $"{a.DisplayName} — {string.Join(" · ", parts)}";
+            // short enough to fit one line of the shade: «AirPods Pro — Л 72 · П 64 · К 41%»
+            if (a.Left.Level is int l) parts.Add($"Л {l}{(a.Left.Charging ? "⚡" : "")}");
+            if (a.Right.Level is int r) parts.Add($"П {r}{(a.Right.Charging ? "⚡" : "")}");
+            if (a.Case.Level is int c) parts.Add($"К {c}{(a.Case.Charging ? "⚡" : "")}");
+            return $"{a.DisplayName} — {string.Join(" · ", parts)}%";
         }
-        if (a.Level is int lv) return $"{a.DisplayName} — {lv}%{(a.Charging ? " ⚡ заряжается" : "")}";
+        if (a.Level is int lv) return $"{a.DisplayName} — {lv}%{(a.Charging ? " ⚡" : "")}";
         return $"{a.DisplayName} — {a.Link}, заряд не передаётся";
     }
 
