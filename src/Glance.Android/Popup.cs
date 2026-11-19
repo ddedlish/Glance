@@ -87,8 +87,7 @@ internal sealed class PopupView : View
         _a = a;
         _remove = remove;
         _d = c.Resources!.DisplayMetrics!.Density;
-        bool dark = ((c.Resources.Configuration?.UiMode ?? UiMode.NightNo) & UiMode.NightMask) == UiMode.NightYes;
-        _p = Palette.For(dark);
+        _p = Palette.For(UserPrefs.Dark(c));
         _hideAt = _t0 + ShowMs;
         Watchdog();
     }

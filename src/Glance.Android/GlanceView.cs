@@ -34,30 +34,17 @@ internal sealed class Backdrop : View
 
 /// <summary>
 /// The whole screen, drawn by hand: header, hero card with the live liquid ring, one glass card per accessory
-/// (earbuds get L / R / case rings), the shade switch, and banners (permission, Bluetooth off, update).
+/// (earbuds get L / R / case rings), a gear that opens Settings, and banners (permission, Bluetooth off, update).
 /// Lives inside a ScrollView: reports its content height in OnMeasure.
 /// </summary>
-internal sealed class GlanceView : View
+internal sealed class GlanceView : GlassView
 {
     readonly Devices _dev;
-    readonly float _d;            // px per dp
-    Palette _p = Palette.For(true);
-    long _born = SystemClock.UptimeMillis();
     readonly Dictionary<string, (float From, float To, long T0)> _tweens = new();
 
-    public float TopInset { get; set; }
-    public float BottomInset { get; set; }
     public string VersionText { get; set; } = "";
     public UpdateInfo? Update { get; set; }
     public event Action? PermissionRequested, UpdateRequested;
-
-    /// <summary>«Заряд в шторке» switch at the bottom (the always-on notification).</summary>
-    public bool ShadeOn { get; set; } = true;
-    public event Action<bool>? ShadeToggled;
-
-    /// <summary>«Звуки» switch: chimes on connect, disconnect, low battery and full charge.</summary>
-    public bool SoundsOn { get; set; } = true;
-    public event Action<bool>? SoundsToggled;
 
     /// <summary>False until «Поверх других приложений» is allowed: a banner offers the connect popup.</summary>
     public bool PopupAllowed { get; set; } = true;
@@ -65,22 +52,23 @@ internal sealed class GlanceView : View
     RectF _popR = new();
 
     // hit areas
-    RectF _heroR = new(), _permR = new(), _updR = new(), _shadeR = new(), _soundR = new();
+    RectF _heroR = new(), _permR = new(), _updR = new(), _gearR = new();
+    long _gearT0 = -10_000;
+
+    /// <summary>The gear in the header: opens Settings.</summary>
+    public event Action? SettingsRequested;
+
+    /// <summary>«Низкий заряд» threshold from Settings: the hero says «Пора зарядить» at or below it.</summary>
+    public int LowAt { get; set; } = 20;
 
     public GlanceView(Context c, Devices dev) : base(c)
     {
         _dev = dev;
-        _d = c.Resources!.DisplayMetrics!.Density;
     }
-
-    public void SetPalette(Palette p) { _p = p; Invalidate(); }
-
-    float Dp(float v) => v * _d;
-    static long Now => SystemClock.UptimeMillis();
 
     // ───────── layout ─────────
 
-    const float Side = 16, Gap = 12, HeroH = 148, CardH = 84, BudsH = 150, BannerH = 64, ShadeH = 72;
+    const float Gap = 12, HeroH = 148, CardH = 84, BudsH = 150, BannerH = 64;
 
     Accessory? Hero(IReadOnlyList<Accessory> list)
     {
@@ -98,8 +86,6 @@ internal sealed class GlanceView : View
         if (Hero(list) is not null) y += HeroH + Gap + 28;
         if (list.Count == 0) y += 200;
         else y += 28 + list.Sum(a => (a.HasParts ? BudsH : CardH) + Gap);
-        y += 28 + ShadeH + Gap;
-        y += ShadeH + Gap; // «Звуки»
         y += 40;
         return Dp(y) + BottomInset;
     }
@@ -113,14 +99,6 @@ internal sealed class GlanceView : View
     }
 
     // ───────── animation helpers ─────────
-
-    /// <summary>0…1 entrance of the item at index i (cards rise one after another).</summary>
-    float Arrive(int i)
-    {
-        float ms = Now - _born - 80 - i * 60;
-        float t = Math.Clamp(ms / 420f, 0, 1);
-        return 1 - MathF.Pow(1 - t, 3);
-    }
 
     /// <summary>Smoothly animated level per key (counts up on open, glides on change).</summary>
     float Tween(string key, float target)
@@ -151,7 +129,10 @@ internal sealed class GlanceView : View
         // header
         Text(canvas, "Аксессуары", Dp(16), y + Dp(30), Dp(32), _p.Text, bold: true);
         string sub = list.Count == 0 ? VersionText : $"подключено: {list.Count} · {VersionText}";
-        Text(canvas, sub, Dp(17), y + Dp(56), Dp(14), _p.Sub);
+        Text(canvas, sub, Dp(17), y + Dp(56), Dp(14), _p.Sub, maxW: w - Dp(17 + 16));
+        float gr = Dp(21);
+        _gearR = new RectF(w - Dp(Side) - 2 * gr, y + Dp(20) - gr, w - Dp(Side), y + Dp(20) + gr);
+        DrawGearButton(canvas, _gearR);
         y += Dp(96 - 28);
 
         if (Update is { } up)
@@ -224,15 +205,6 @@ internal sealed class GlanceView : View
             }
         }
 
-        y += Dp(28);
-        Section(canvas, "Шторка и звуки", y);
-        _shadeR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(ShadeH));
-        var sr = _shadeR;
-        Shift(canvas, idx++, () => DrawShadeRow(canvas, sr));
-        y += Dp(ShadeH + Gap);
-        _soundR = new RectF(Dp(Side), y, w - Dp(Side), y + Dp(ShadeH));
-        var snr = _soundR;
-        Shift(canvas, idx++, () => DrawSoundRow(canvas, snr));
 
         if (Animating || list.Any(a => a.Charging) || (hero?.Charging ?? false)) PostInvalidateOnAnimation();
         if (!_drawnOnce) { _drawnOnce = true; Android.Util.Log.Info("Glance", $"drawn: {list.Count} devices, demo={_dev.Demo}"); }
@@ -240,132 +212,19 @@ internal sealed class GlanceView : View
 
     bool _drawnOnce;
 
-    long _switchT0 = -10_000, _soundT0 = -10_000;
-
-    /// <summary>«Звуки»: a speaker whose waves ripple out for a moment after the switch is flipped.</summary>
-    void DrawSoundRow(Canvas c, RectF r)
+    /// <summary>Glass button with a gear in the header; the gear turns when tapped.</summary>
+    void DrawGearButton(Canvas c, RectF r)
     {
-        Glass(c, r, Dp(22));
-        var tile = new RectF(r.Left + Dp(16), r.Top + Dp(16), r.Left + Dp(56), r.Top + Dp(56));
-        var col = AColor.Argb(255, 255, 94, 135);
-        using (var tp = new Paint(PaintFlags.AntiAlias))
+        using (var p = new Paint(PaintFlags.AntiAlias) { Color = _p.Card }) c.DrawOval(r, p);
+        using (var b = new Paint(PaintFlags.AntiAlias) { Color = _p.CardBorder, StrokeWidth = Math.Max(1, Dp(1)) })
         {
-            tp.SetShader(new LinearGradient(tile.Left, tile.Top, tile.Right, tile.Bottom, Palette.Mix(col, AColor.White, 0.2f), Palette.Mix(col, AColor.Black, 0.1f), Shader.TileMode.Clamp!));
-            c.DrawRoundRect(tile, Dp(12), Dp(12), tp);
+            b.SetStyle(Paint.Style.Stroke);
+            c.DrawOval(r, b);
         }
-        float cx = tile.Left + Dp(15), cy = tile.CenterY();
-        using (var sp = new Paint(PaintFlags.AntiAlias) { Color = AColor.White })
-        {
-            // speaker: a small box and a cone
-            using var path = new Path();
-            path.MoveTo(cx - Dp(6), cy - Dp(3.5f));
-            path.LineTo(cx - Dp(2), cy - Dp(3.5f));
-            path.LineTo(cx + Dp(3), cy - Dp(8));
-            path.LineTo(cx + Dp(3), cy + Dp(8));
-            path.LineTo(cx - Dp(2), cy + Dp(3.5f));
-            path.LineTo(cx - Dp(6), cy + Dp(3.5f));
-            path.Close();
-            c.DrawPath(path, sp);
-        }
-        using (var wp = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Dp(2), StrokeCap = Paint.Cap.Round })
-        {
-            wp.SetStyle(Paint.Style.Stroke);
-            float since = (Now - _soundT0) / 1000f;
-            for (int i = 0; i < 2; i++)
-            {
-                float rr = Dp(6 + i * 5);
-                int alpha = SoundsOn ? 255 : 90;
-                if (SoundsOn && since < 1.2f)
-                {
-                    // a ripple runs outward through the two waves after switching on
-                    float ph = Math.Clamp(since * 2.4f - i * 0.35f, 0, 1);
-                    alpha = (int)(255 * (0.35f + 0.65f * MathF.Sin(ph * MathF.PI * 0.5f)));
-                    rr += Dp(2) * MathF.Sin(ph * MathF.PI);
-                }
-                wp.Color = AColor.Argb(alpha, 255, 255, 255);
-                c.DrawArc(new RectF(cx + Dp(3) - rr, cy - rr, cx + Dp(3) + rr, cy + rr), -45, 90, false, wp);
-            }
-            if (!SoundsOn) // muted: a slash across the speaker
-            {
-                wp.Color = AColor.White;
-                c.DrawLine(cx - Dp(7), cy - Dp(9), cx + Dp(13), cy + Dp(9), wp);
-            }
-        }
-        DrawSwitch(c, r, tile, "Звуки", SoundsOn ? "Подключение и заряд" : "Выключено", SoundsOn, _soundT0);
-        if (Now - _soundT0 < 1300) PostInvalidateOnAnimation();
-    }
-
-    /// <summary>Glass row with an iOS-style switch: the knob glides and the track fills with colour.</summary>
-    void DrawShadeRow(Canvas c, RectF r)
-    {
-        Glass(c, r, Dp(22));
-        var tile = new RectF(r.Left + Dp(16), r.Top + Dp(16), r.Left + Dp(56), r.Top + Dp(56));
-        using (var tp = new Paint(PaintFlags.AntiAlias))
-        {
-            tp.SetShader(new LinearGradient(tile.Left, tile.Top, tile.Right, tile.Bottom, Palette.Mix(_p.Accent, AColor.White, 0.2f), Palette.Mix(_p.Accent, AColor.Black, 0.1f), Shader.TileMode.Clamp!));
-            c.DrawRoundRect(tile, Dp(12), Dp(12), tp);
-        }
-        // the status-bar ring, in miniature
-        using (var rp = new Paint(PaintFlags.AntiAlias) { StrokeWidth = Dp(2.6f), StrokeCap = Paint.Cap.Round, Color = AColor.Argb(110, 255, 255, 255) })
-        {
-            rp.SetStyle(Paint.Style.Stroke);
-            var rb = new RectF(tile.Left + Dp(10), tile.Top + Dp(10), tile.Right - Dp(10), tile.Bottom - Dp(10));
-            c.DrawOval(rb, rp);
-            rp.Color = AColor.White;
-            c.DrawArc(rb, -90, 250, false, rp);
-        }
-        DrawSwitch(c, r, tile, "Заряд в шторке", ShadeOn ? "Всегда, даже в фоне" : "Выключено", ShadeOn, _switchT0);
-    }
-
-    void DrawSwitch(Canvas c, RectF r, RectF tile, string title, string subtitle, bool isOn, long t0)
-    {
-        float tx = tile.Right + Dp(14), sw = Dp(52), sh = Dp(32);
-        Text(c, title, tx, r.Top + Dp(32), Dp(16), _p.Text, bold: true, maxW: r.Right - tx - sw - Dp(30));
-        Text(c, subtitle, tx, r.Top + Dp(52), Dp(12.5f), _p.Sub, maxW: r.Right - tx - sw - Dp(30));
-
-        float k = Math.Clamp((Now - t0) / 260f, 0, 1);
-        k = 1 - MathF.Pow(1 - k, 3);
-        float on = isOn ? k : 1 - k;
-        var track = new RectF(r.Right - Dp(18) - sw, r.CenterY() - sh / 2, r.Right - Dp(18), r.CenterY() + sh / 2);
-        using (var t = new Paint(PaintFlags.AntiAlias) { Color = Palette.Mix(_p.Track, Palette.Green, on) })
-            c.DrawRoundRect(track, sh / 2, sh / 2, t);
-        float kr = sh / 2 - Dp(3);
-        float kx = track.Left + Dp(3) + kr + (track.Width() - 2 * (kr + Dp(3))) * on;
-        using (var shadow = new Paint(PaintFlags.AntiAlias) { Color = AColor.Argb(50, 0, 0, 0) })
-            c.DrawCircle(kx, track.CenterY() + Dp(1), kr, shadow);
-        using (var knob = new Paint(PaintFlags.AntiAlias) { Color = AColor.White })
-            c.DrawCircle(kx, track.CenterY(), kr, knob);
+        float k = Math.Clamp((Now - _gearT0) / 520f, 0, 1);
+        float angle = 90 * (1 - MathF.Pow(1 - k, 3));
+        Gear(c, r.CenterX(), r.CenterY(), r.Width() * 0.27f, angle, _p.Text);
         if (k < 1) PostInvalidateOnAnimation();
-    }
-
-    /// <summary>Draws an item with its entrance offset and fade.</summary>
-    void Shift(Canvas c, int i, Action draw)
-    {
-        float k = Arrive(i);
-        if (k <= 0) return;
-        if (k >= 1) { draw(); return; }
-        int save = c.SaveLayerAlpha(0, 0, Width, Height, (int)(255 * k));
-        c.Translate(0, (1 - k) * Dp(24));
-        draw();
-        c.RestoreToCount(save);
-    }
-
-    void Section(Canvas c, string title, float cardTop) =>
-        Text(c, title.ToUpperInvariant(), Dp(Side + 6), cardTop - Dp(10), Dp(12), _p.Sub, bold: true, spacing: 0.06f);
-
-    void Glass(Canvas c, RectF r, float radius)
-    {
-        using var p = new Paint(PaintFlags.AntiAlias) { Color = _p.Card };
-        c.DrawRoundRect(r, radius, radius, p);
-        // specular sheen over the top half
-        using var sheen = new Paint(PaintFlags.AntiAlias);
-        sheen.SetShader(new LinearGradient(0, r.Top, 0, r.Top + r.Height() * 0.55f,
-            AColor.Argb(_p.Dark ? 30 : 110, 255, 255, 255), AColor.Argb(0, 255, 255, 255), Shader.TileMode.Clamp!));
-        c.DrawRoundRect(r, radius, radius, sheen);
-        using var b = new Paint(PaintFlags.AntiAlias) { Color = _p.CardBorder, StrokeWidth = Math.Max(1, Dp(1)) };
-        b.SetStyle(Paint.Style.Stroke);
-        var rr = new RectF(r.Left + b.StrokeWidth / 2, r.Top + b.StrokeWidth / 2, r.Right - b.StrokeWidth / 2, r.Bottom - b.StrokeWidth / 2);
-        c.DrawRoundRect(rr, radius, radius, b);
     }
 
     void Banner(Canvas c, RectF r, string title, string sub, AColor tint, bool chevron)
@@ -378,13 +237,6 @@ internal sealed class GlanceView : View
         Text(c, title, r.Left + Dp(42), r.Top + Dp(27), Dp(15.5f), _p.Text, bold: true, maxW: r.Width() - Dp(80));
         Text(c, sub, r.Left + Dp(42), r.Top + Dp(47), Dp(12.5f), _p.Sub, maxW: r.Width() - Dp(80));
         if (chevron) Chevron(c, r.Right - Dp(24), r.CenterY(), _p.Sub);
-    }
-
-    void Chevron(Canvas c, float x, float y, AColor color)
-    {
-        using var p = new Paint(PaintFlags.AntiAlias) { Color = color, StrokeWidth = Dp(2), StrokeCap = Paint.Cap.Round };
-        c.DrawLine(x - Dp(4), y - Dp(6), x + Dp(2), y, p);
-        c.DrawLine(x + Dp(2), y, x - Dp(4), y + Dp(6), p);
     }
 
     void Tile(Canvas c, RectF r, DeviceKind kind)
@@ -550,8 +402,8 @@ internal sealed class GlanceView : View
         var tile = new RectF(tx, r.Top + Dp(26), tx + Dp(22), r.Top + Dp(48));
         Icons.Draw(c, a.Kind, tile, Palette.KindColor(a.Kind), Dp(2));
         Text(c, a.DisplayName, tx + Dp(28), r.Top + Dp(43), Dp(16), _p.Text, bold: true, maxW: tw - Dp(28));
-        string line = a.Charging ? "Заряжается" : lvl <= 20 ? "Пора зарядить" : lvl <= 40 ? "Разрядится первым" : "Всё в порядке";
-        Text(c, line, tx, r.Top + Dp(74), Dp(14.5f), lvl <= 20 && !a.Charging ? Palette.Red : _p.Text, maxW: tw);
+        string line = a.Charging ? "Заряжается" : lvl <= LowAt ? "Пора зарядить" : lvl <= 40 ? "Разрядится первым" : "Всё в порядке";
+        Text(c, line, tx, r.Top + Dp(74), Dp(14.5f), lvl <= LowAt && !a.Charging ? Palette.Red : _p.Text, maxW: tw);
         string sub = a.HasParts ? $"Левый {Fmt.Percent(a.Left.Level)} · Правый {Fmt.Percent(a.Right.Level)}" : a.Link;
         Text(c, sub, tx, r.Top + Dp(98), Dp(12.5f), _p.Sub, maxW: tw);
     }
@@ -634,55 +486,6 @@ internal sealed class GlanceView : View
         return path;
     }
 
-    // ───────── text ─────────
-
-    static readonly Typeface Regular = Typeface.Create("sans-serif", TypefaceStyle.Normal)!;
-    static readonly Typeface Bold = Typeface.Create("sans-serif-medium", TypefaceStyle.Normal)!;
-
-    static Paint TextPaint(float size, bool bold)
-    {
-        var p = new Paint(PaintFlags.AntiAlias | PaintFlags.SubpixelText) { TextSize = size };
-        p.SetTypeface(bold ? Bold : Regular);
-        return p;
-    }
-
-    void Text(Canvas c, string s, float x, float baseline, float size, AColor color, bool bold = false, float maxW = 0, float spacing = 0)
-    {
-        using var p = TextPaint(size, bold);
-        p.Color = color;
-        if (spacing > 0) p.LetterSpacing = spacing;
-        c.DrawText(maxW > 0 ? Fit(s, p, maxW) : s, x, baseline, p);
-    }
-
-    void TextRight(Canvas c, string s, float right, float baseline, float size, AColor color, bool bold)
-    {
-        using var p = TextPaint(size, bold);
-        p.Color = color;
-        p.TextAlign = Paint.Align.Right;
-        c.DrawText(s, right, baseline, p);
-    }
-
-    void TextCentered(Canvas c, string s, float cx, float baseline, float size, AColor color, bool bold)
-    {
-        using var p = TextPaint(size, bold);
-        p.Color = color;
-        p.TextAlign = Paint.Align.Center;
-        c.DrawText(Fit(s, p, Width - Dp(32)), cx, baseline, p);
-    }
-
-    /// <summary>Shortens text with «…» to fit the width.</summary>
-    static string Fit(string s, Paint p, float maxW)
-    {
-        if (p.MeasureText(s) <= maxW) return s;
-        int lo = 0, hi = s.Length;
-        while (lo < hi)
-        {
-            int mid = (lo + hi + 1) / 2;
-            if (p.MeasureText(s[..mid].TrimEnd() + "…") <= maxW) lo = mid; else hi = mid - 1;
-        }
-        return s[..lo].TrimEnd() + "…";
-    }
-
     // ───────── touch ─────────
 
     float _downX, _downY;
@@ -704,19 +507,12 @@ internal sealed class GlanceView : View
                 else if (_updR.Contains(x, y)) UpdateRequested?.Invoke();
                 else if (_popR.Contains(x, y)) PopupPermissionRequested?.Invoke();
                 else if (_heroR.Contains(x, y)) Slosh(0.9f);
-                else if (_shadeR.Contains(x, y))
+                else if (Grow(_gearR, Dp(8)).Contains(x, y))
                 {
-                    ShadeOn = !ShadeOn;
-                    _switchT0 = Now;
-                    ShadeToggled?.Invoke(ShadeOn);
+                    _gearT0 = Now;
+                    PerformHapticFeedback(FeedbackConstants.VirtualKey);
                     Invalidate();
-                }
-                else if (_soundR.Contains(x, y))
-                {
-                    SoundsOn = !SoundsOn;
-                    _soundT0 = Now;
-                    SoundsToggled?.Invoke(SoundsOn);
-                    Invalidate();
+                    SettingsRequested?.Invoke();
                 }
                 PerformClick();
                 return true;

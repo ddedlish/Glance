@@ -78,6 +78,19 @@ bottom dark-demo-bottom
 step dark-demo-update yes --ez demo true --es fakeupdate 9.9.9
 step light-demo no --ez demo true
 shade light-shade
+
+settings_back() { # «Настройки»: the system back gesture closes the page and returns to the accessories
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1.5
+  N=$((N+1)); adb exec-out screencap -p > "$OUT/$(printf "%02d-%s.png" $N "$1")"
+  if adb logcat -d -s Glance:I | grep -q "settings: closed" && [ -n "$(adb shell pidof $PKG | tr -d '\r')" ]; then note "$1: «Назад» закрывает настройки"
+  else fail "$1: «Назад» не закрыл настройки"; adb logcat -d -s Glance:I | grep settings | tail -5 >> "$REPORT"; fi
+}
+step dark-settings yes --ez demo true --ez settings true
+adb logcat -d -s Glance:I | grep -q "drawn: settings" && note "dark-settings: экран настроек нарисован" || fail "dark-settings: экран настроек не нарисован"
+bottom dark-settings-bottom
+settings_back dark-settings-back
+step light-settings no --ez demo true --ez settings true
 popup() { # name — the glass card that slides up over any app the moment earbuds connect
   local name="$1"
   adb shell appops set $PKG SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1

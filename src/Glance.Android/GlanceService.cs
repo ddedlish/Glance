@@ -147,7 +147,8 @@ public sealed class GlanceService : Service
 
     // ───────── sound cues: low battery and fully charged, once per cycle ─────────
 
-    const int LowAt = 20;
+    /// <summary>«Низкий заряд» threshold from Settings (default 20 %).</summary>
+    int LowAt => UserPrefs.LowAt(this);
     readonly HashSet<string> _low = new(StringComparer.Ordinal), _full = new(StringComparer.Ordinal), _seen = new(StringComparer.Ordinal);
 
     void Levels(bool chime)
@@ -257,7 +258,7 @@ public sealed class GlanceService : Service
         {
             title = string.Join(" · ", all.Take(3).Select(Short)) + (all.Count > 3 ? $" · ещё {all.Count - 3}" : "");
             text = weakest is { WeakestLevel: int wl } w
-                ? (w.Charging ? $"{w.DisplayName} заряжается" : wl <= 20 ? $"{w.DisplayName}: пора зарядить" : $"Первым разрядится {w.DisplayName}")
+                ? (w.Charging ? $"{w.DisplayName} заряжается" : wl <= LowAt ? $"{w.DisplayName}: пора зарядить" : $"Первым разрядится {w.DisplayName}")
                 : "Подключено, заряд не передаётся";
         }
 
